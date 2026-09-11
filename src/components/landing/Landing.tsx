@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
+import { Download } from "lucide-react";
 import { identity, roles, links } from "@/content/profile";
 import { useSystem } from "@/store/useSystem";
 import { useDeferredMount } from "@/hooks/useDeferredMount";
@@ -135,21 +136,33 @@ export default function Landing() {
             className="rise mt-10 flex flex-col items-center gap-6 lg:items-start"
             style={{ animationDelay: "330ms" }}
           >
-            <button
-              type="button"
-              onClick={enterSystem}
-              className={cn(
-                "group relative overflow-hidden rounded-full px-9 py-3.5",
-                "glass glass-hover font-mono text-[12px] uppercase tracking-[0.28em] text-ink sm:text-[11px]",
-                "cursor-pointer"
-              )}
-            >
-              <span
-                aria-hidden
-                className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-cyan/25 to-transparent transition-transform duration-[1100ms] ease-out group-hover:translate-x-full"
-              />
-              <span className="relative">Enter System</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+              <button
+                type="button"
+                onClick={enterSystem}
+                className={cn(
+                  "group relative overflow-hidden rounded-full px-9 py-3.5",
+                  "glass glass-hover font-mono text-[12px] uppercase tracking-[0.28em] text-ink sm:text-[11px]",
+                  "cursor-pointer"
+                )}
+              >
+                <span
+                  aria-hidden
+                  className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-cyan/25 to-transparent transition-transform duration-[1100ms] ease-out group-hover:translate-x-full"
+                />
+                <span className="relative">Enter System</span>
+              </button>
+
+              {/* Recruiters want the PDF, not a tour. Give them one click. */}
+              <a
+                href={links.cv}
+                download
+                className="glass-hover inline-flex cursor-pointer items-center gap-2 rounded-full border border-hairline px-6 py-3.5 font-mono text-[12px] uppercase tracking-[0.2em] text-ink-dim hover:text-cyan sm:text-[11px]"
+              >
+                <Download size={13} />
+                Download CV
+              </a>
+            </div>
 
             <nav
               aria-label="External profiles"

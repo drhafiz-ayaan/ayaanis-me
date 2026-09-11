@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { sections, identity, publications, ventures } from "@/content/profile";
+import { sections, identity, publications, ventures, links } from "@/content/profile";
+import { Download, Mail } from "lucide-react";
 import { useSystem } from "@/store/useSystem";
 import SectionPanel from "@/components/hub/SectionPanel";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,25 @@ export default function CommandCenter() {
             </h1>
           </div>
           <Telemetry />
+
+          {/* The two things a recruiter actually wants, always in reach */}
+          <div className="flex items-center gap-2.5">
+            <a
+              href={links.cv}
+              download
+              className="glass-hover inline-flex items-center gap-2 rounded-full border border-cyan/30 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.16em] text-cyan sm:text-[10px]"
+            >
+              <Download size={12} />
+              CV
+            </a>
+            <a
+              href={links.email}
+              className="glass-hover inline-flex items-center gap-2 rounded-full border border-hairline px-4 py-2 font-mono text-[12px] uppercase tracking-[0.16em] text-ink-dim hover:text-cyan sm:text-[10px]"
+            >
+              <Mail size={12} />
+              Contact
+            </a>
+          </div>
         </motion.header>
 
         <motion.p

@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { identity, links, mission } from "@/content/profile";
 
 const sans = Inter({
@@ -127,6 +129,9 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(personSchema) }}
         />
         {children}
+        {/* Real-visitor metrics — the lab numbers only ever approximate these */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

@@ -34,6 +34,7 @@ export const links = {
   scholar: "https://scholar.google.com/citations?user=ABC3PioAAAAJ&hl=en",
   orcid: "https://orcid.org/0009-0000-5548-8187",
   email: "mailto:drhafiz.ayaan@gmail.com",
+  cv: "/Ayaan-Aatif-CV.pdf",
 } as const;
 
 /* ------------------------------------------------------------------ */

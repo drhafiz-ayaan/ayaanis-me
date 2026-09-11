@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { useSystem } from "@/store/useSystem";
+import { cn } from "@/lib/utils";
 import { sections, type SectionId } from "@/content/profile";
 import {
   MissionBody,
@@ -29,6 +30,7 @@ const BODIES: Record<SectionId, () => React.ReactElement> = {
 
 export default function SectionPanel({ id }: { id: SectionId }) {
   const close = useSystem((s) => s.closeSection);
+  const open = useSystem((s) => s.openSection);
   const panelRef = useRef<HTMLDivElement>(null);
   const meta = sections.find((s) => s.id === id)!;
   const Body = BODIES[id];
@@ -91,6 +93,30 @@ export default function SectionPanel({ id }: { id: SectionId }) {
             <X size={16} strokeWidth={2} />
           </button>
         </header>
+
+        {/* Jump between modules without going back to the hub first */}
+        <nav
+          aria-label="Modules"
+          className="flex gap-1.5 overflow-x-auto border-b border-hairline px-4 py-2.5 sm:px-7"
+        >
+          {sections.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => open(s.id)}
+              aria-current={s.id === id ? "page" : undefined}
+              className={cn(
+                "shrink-0 cursor-pointer rounded-full px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.12em] transition-colors sm:text-[10px]",
+                s.id === id
+                  ? "bg-cyan/15 text-cyan-bright"
+                  : "text-ink-mute hover:text-ink-dim"
+              )}
+            >
+              <span className="opacity-60">{s.code}</span>{" "}
+              <span className="hidden sm:inline">{s.label}</span>
+            </button>
+          ))}
+        </nav>
 
         <div className="px-6 py-7 sm:px-9 sm:py-9">
           <Body />
