@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download } from "lucide-react";
-import { identity, roles, links } from "@/content/profile";
+import { identity, roleModes, links } from "@/content/profile";
 import { useSystem } from "@/store/useSystem";
 import { useDeferredMount } from "@/hooks/useDeferredMount";
 import { SceneBoundary } from "@/components/three/SceneBoundary";
@@ -66,6 +66,8 @@ export default function Landing() {
   const finishBoot = useSystem((s) => s.finishBoot);
   const enterSystem = useSystem((s) => s.enterSystem);
   const gfxReady = useDeferredMount();
+  const activeRole = useSystem((s) => s.activeRole);
+  const setActiveRole = useSystem((s) => s.setActiveRole);
 
   return (
     <div className="relative z-10 min-h-dvh">
@@ -113,17 +115,54 @@ export default function Landing() {
             style={{ animationDelay: "140ms" }}
           />
 
+          {/*
+            Hovering a role drives the point cloud's behaviour, not just a
+            colour: AI scatters, robotics snaps to a lattice, the twin gets
+            scan bands, founder contracts. Focus works too, so it is reachable
+            by keyboard; on touch, tapping holds the state.
+          */}
           <ul
-            className="rise mt-6 flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[12px] uppercase tracking-[0.2em] text-ink-dim sm:text-xs lg:justify-start"
+            className="rise mt-6 flex max-w-full flex-wrap items-center justify-center gap-x-1 gap-y-1 lg:justify-start"
             style={{ animationDelay: "200ms" }}
+            onMouseLeave={() => setActiveRole(null)}
           >
-            {roles.map((r, i) => (
-              <li key={r} className="flex items-center gap-3">
-                {i > 0 && <span className="text-cyan/40">/</span>}
-                <span>{r}</span>
-              </li>
-            ))}
+            {roleModes.map((r, i) => {
+              const on = activeRole === i;
+              const dim = activeRole != null && !on;
+              return (
+                <li key={r.label} className="flex items-center">
+                  {i > 0 && (
+                    <span aria-hidden className="px-1 text-cyan/30">
+                      /
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onMouseEnter={() => setActiveRole(i)}
+                    onFocus={() => setActiveRole(i)}
+                    onBlur={() => setActiveRole(null)}
+                    onClick={() => setActiveRole(on ? null : i)}
+                    className={cn(
+                      "cursor-pointer rounded px-1.5 py-1 font-mono text-[12px] uppercase tracking-[0.2em] transition-all duration-300 sm:text-xs",
+                      dim ? "text-ink-mute/45" : "text-ink-dim"
+                    )}
+                    style={on ? { color: r.tint } : undefined}
+                  >
+                    {r.label}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+
+          {/* Fixed height so revealing the note never shifts the layout */}
+          <p
+            aria-live="polite"
+            className="mt-2 flex min-h-[1.6rem] items-center text-[13px] italic text-ink-mute transition-opacity duration-300"
+            style={{ opacity: activeRole == null ? 0 : 1 }}
+          >
+            {activeRole == null ? " " : roleModes[activeRole].note}
+          </p>
 
           <p
             className="rise mt-7 max-w-[42ch] text-balance text-sm leading-relaxed text-ink-dim sm:text-base"

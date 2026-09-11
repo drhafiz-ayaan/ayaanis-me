@@ -21,12 +21,43 @@ export const identity = {
   domain: "ayaanaatif.me",
 } as const;
 
-export const roles = [
-  "AI Engineer",
-  "Robotics Researcher",
-  "Digital Twin Builder",
-  "Founder",
+/**
+ * The four roles, each with an accent and a behaviour for the hero point
+ * cloud. Hovering a role should *show* what it means rather than just
+ * recolour the page — so `mode` selects a displacement in the cloud shader.
+ */
+export const roleModes = [
+  {
+    label: "AI Engineer",
+    tint: "#a78bfa",
+    note: "perception, learning, inference at the edge",
+    /** 0 — high-frequency jitter: a field still searching for its answer */
+    mode: 0,
+  },
+  {
+    label: "Robotics Researcher",
+    tint: "#22d3ee",
+    note: "autonomy that has to survive the real world",
+    /** 1 — snaps to a lattice: mechanical, discretised, repeatable */
+    mode: 1,
+  },
+  {
+    label: "Digital Twin Builder",
+    tint: "#7dd3fc",
+    note: "the physical world, mirrored and synchronised",
+    /** 2 — horizontal scan bands sweep the body, the twin refreshing */
+    mode: 2,
+  },
+  {
+    label: "Founder",
+    tint: "#fbbf24",
+    note: "research turned into something people can deploy",
+    /** 3 — contracts and brightens: scattered work pulled into one thing */
+    mode: 3,
+  },
 ] as const;
+
+export const roles = roleModes.map((r) => r.label);
 
 export const links = {
   github: "https://github.com/drhafiz-ayaan",

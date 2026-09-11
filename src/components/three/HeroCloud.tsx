@@ -5,6 +5,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useSystem } from "@/store/useSystem";
 import { buildCloud, makeScatter, loadCloudImage, type Cloud } from "@/lib/cloud";
+import { roleModes } from "@/content/profile";
 
 /**
  * Landing hero: particles fly in, gather into a globe, then the globe resolves
@@ -17,6 +18,9 @@ const VERT = /* glsl */ `
   uniform float uMorph;     // sphere  -> figure
   uniform float uTime;
   uniform float uSize;
+  uniform vec3  uRoleTint;
+  uniform float uRoleAmt;   // 0..1, ramps as a role is hovered
+  uniform float uRoleMode;  // 0..3, which behaviour to express
 
   attribute vec3 aScatter;
   attribute vec3 aFigure;
@@ -36,16 +40,45 @@ const VERT = /* glsl */ `
     pos.x += sin(uTime * 0.5 + aSeed * 9.0) * idle;
     pos.z += cos(uTime * 0.43 + aSeed * 7.0) * idle;
 
+    // Role expression. uRoleMode is a uniform, so this branch is coherent
+    // across every vertex and costs effectively nothing on the GPU. Only
+    // applies once the figure has formed — displacing a half-morphed cloud
+    // just reads as noise.
+    float rm = uRoleAmt * uMorph;
+    if (rm > 0.001) {
+      vec3 disp;
+      if (uRoleMode < 0.5) {
+        // AI: high-frequency search, a field still resolving
+        disp = vec3(
+          sin(uTime * 7.0 + aSeed * 31.0),
+          cos(uTime * 6.3 + aSeed * 17.0),
+          sin(uTime * 5.1 + aSeed * 23.0)
+        ) * 0.055;
+      } else if (uRoleMode < 1.5) {
+        // Robotics: snap to a lattice — discretised, mechanical, repeatable
+        float st = 0.14;
+        disp = (floor(pos / st) * st + st * 0.5) - pos;
+      } else if (uRoleMode < 2.5) {
+        // Digital twin: horizontal scan bands sweeping the body
+        disp = vec3(0.0, 0.0, sin(pos.y * 8.0 - uTime * 2.6) * 0.12);
+      } else {
+        // Founder: contract — scattered work pulled into one thing
+        disp = -pos * 0.085;
+      }
+      pos += disp * rm;
+    }
+
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     gl_Position = projectionMatrix * mv;
-    gl_PointSize = uSize * (6.0 / -mv.z);
+    gl_PointSize = uSize * (6.0 / -mv.z) * (1.0 + rm * 0.25);
 
-    // cyan while it is still a globe, true colour once it is a person
+    // cyan while it is still a globe, true colour once it is a person,
+    // then pushed toward the hovered role's accent
     vec3 cyan = vec3(0.15, 0.68, 0.80);
-    vColor = mix(cyan, aColor, uMorph);
+    vColor = mix(mix(cyan, aColor, uMorph), uRoleTint, rm * 0.72);
 
     float tw = 0.72 + 0.28 * sin(uTime * 1.3 + aSeed * 12.0);
-    vFade = uAssemble * mix(tw, 0.95, uMorph);
+    vFade = uAssemble * mix(tw, 0.95, uMorph) * (1.0 + rm * 0.35);
   }
 `;
 
@@ -69,6 +102,7 @@ function Points({ cloud }: { cloud: Cloud }) {
   const mat = useRef<THREE.ShaderMaterial>(null);
   const grp = useRef<THREE.Points>(null);
   const t = useRef(0);
+  const activeRole = useSystem((s) => s.activeRole);
 
   const scatter = useMemo(
     () => makeScatter(cloud.count, cloud.height * 0.9),
@@ -81,6 +115,9 @@ function Points({ cloud }: { cloud: Cloud }) {
       uMorph: { value: 0 },
       uTime: { value: 0 },
       uSize: { value: 3.6 },
+      uRoleTint: { value: new THREE.Color("#22d3ee") },
+      uRoleAmt: { value: 0 },
+      uRoleMode: { value: 0 },
     }),
     []
   );
@@ -100,6 +137,22 @@ function Points({ cloud }: { cloud: Cloud }) {
     mat.current.uniforms.uMorph.value =
       m < 0.5 ? 4 * m * m * m : 1 - Math.pow(-2 * m + 2, 3) / 2;
     mat.current.uniforms.uTime.value = state.clock.elapsedTime;
+
+    // Ramp the role influence rather than snapping it, so moving along the
+    // role list reads as the cloud changing behaviour, not flicking between
+    // presets. The tint is set immediately; uRoleAmt does the easing.
+    const u = mat.current.uniforms;
+    if (activeRole != null) {
+      const r = roleModes[activeRole];
+      u.uRoleMode.value = r.mode;
+      (u.uRoleTint.value as THREE.Color).set(r.tint);
+    }
+    u.uRoleAmt.value = THREE.MathUtils.damp(
+      u.uRoleAmt.value as number,
+      activeRole == null ? 0 : 1,
+      5,
+      d
+    );
 
     if (grp.current) {
       const morph = mat.current.uniforms.uMorph.value;

@@ -11,6 +11,8 @@ interface SystemState {
   auraOpen: boolean;
   /** Set once we detect a weak GPU / reduced-motion, to thin out the 3D work. */
   lowPower: boolean;
+  /** Index into `roles` while one is hovered/focused on the landing, else null. */
+  activeRole: number | null;
 
   enterSystem: () => void;
   finishBoot: () => void;
@@ -18,6 +20,7 @@ interface SystemState {
   closeSection: () => void;
   setAura: (open: boolean) => void;
   setLowPower: (v: boolean) => void;
+  setActiveRole: (i: number | null) => void;
 }
 
 export const useSystem = create<SystemState>((set) => ({
@@ -25,6 +28,7 @@ export const useSystem = create<SystemState>((set) => ({
   activeSection: null,
   auraOpen: false,
   lowPower: false,
+  activeRole: null,
 
   finishBoot: () => set((s) => (s.phase === "boot" ? { phase: "landing" } : s)),
   enterSystem: () => set({ phase: "hub" }),
@@ -32,4 +36,5 @@ export const useSystem = create<SystemState>((set) => ({
   closeSection: () => set({ activeSection: null }),
   setAura: (open) => set({ auraOpen: open }),
   setLowPower: (v) => set({ lowPower: v }),
+  setActiveRole: (i) => set({ activeRole: i }),
 }));
