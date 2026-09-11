@@ -18,7 +18,7 @@ export const identity = {
   identityLine: "Researcher · Builder · Founder · Engineer",
   location: "Islamabad, Pakistan",
   email: "drhafiz.ayaan@gmail.com",
-  domain: "ayaanis.me",
+  domain: "ayaanaatif.me",
 } as const;
 
 export const roles = [

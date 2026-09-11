@@ -1,9 +1,9 @@
-# ayaanis.me
+# ayaanaatif.me
 
 Portfolio of **Ayaan Aatif** — robotics, digital twins and edge AI.
 Built as an interactive command system rather than a scrolling page.
 
-**Live:** https://ayaanis.me
+**Live:** https://ayaanaatif.me
 
 ---
 
