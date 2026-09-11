@@ -95,10 +95,11 @@ body {
 @layer utilities {
   /* Frosted panel — the core surface of the whole system */
   .glass {
+    /* Opaque enough to stay readable over the moving command room behind it */
     background: linear-gradient(
       160deg,
-      rgb(18 30 50 / 0.72) 0%,
-      rgb(8 14 26 / 0.68) 100%
+      rgb(18 30 50 / 0.86) 0%,
+      rgb(8 14 26 / 0.82) 100%
     );
     backdrop-filter: blur(18px) saturate(140%);
     -webkit-backdrop-filter: blur(18px) saturate(140%);

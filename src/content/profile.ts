@@ -9,8 +9,8 @@
  */
 
 export const identity = {
-  fullName: "Hafiz Ayaan Aatif",
-  shortName: "Ayaan Aatif",
+  fullName: "Ayaan Aatif",
+  shortName: "Ayaan",
   handle: "drhafiz-ayaan",
   role: "Electrical Engineering Student · NUST SEECS",
   brand:

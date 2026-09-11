@@ -7,12 +7,17 @@ import CommandCenter from "@/components/hub/CommandCenter";
 import { useCapability } from "@/hooks/useCapability";
 import { useSystem } from "@/store/useSystem";
 
-// The 3D backdrop is the single heaviest asset — never server-render it, and
-// keep it out of the initial bundle so first paint is text, not WebGL.
+// The 3D scenes are the heaviest assets — never server-render them, and keep
+// them out of the initial bundle so first paint is text, not WebGL. The room
+// only loads once you enter the system, so the landing never pays for it.
 const ParticleGlobe = dynamic(
   () => import("@/components/three/ParticleGlobe"),
   { ssr: false }
 );
+const CommandRoom = dynamic(() => import("@/components/three/CommandRoom"), {
+  ssr: false,
+});
+const Aura = dynamic(() => import("@/components/aura/Aura"), { ssr: false });
 
 export default function Home() {
   useCapability();
@@ -35,18 +40,27 @@ export default function Home() {
         }}
       />
 
-      {/* The globe recedes and dims once you're inside the system */}
+      {/* The globe flies apart as you enter; the room fades up behind the hub */}
       <motion.div
         aria-hidden
-        animate={{
-          opacity: inHub ? 0.32 : 1,
-          scale: inHub ? 1.35 : 1,
-        }}
-        transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1] }}
+        animate={{ opacity: inHub ? 0 : 1, scale: inHub ? 1.6 : 1 }}
+        transition={{ duration: 1.3, ease: [0.16, 1, 0.3, 1] }}
         className="pointer-events-none fixed inset-0"
       >
         <ParticleGlobe className="h-full w-full" />
       </motion.div>
+
+      {inHub && (
+        <motion.div
+          aria-hidden
+          initial={{ opacity: 0, scale: 1.12 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
+          className="pointer-events-none fixed inset-0"
+        >
+          <CommandRoom className="h-full w-full" />
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
         {inHub ? (
@@ -68,6 +82,9 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* AURA only exists inside the system — the landing stays cinematic */}
+      {inHub && <Aura />}
     </main>
   );
 }

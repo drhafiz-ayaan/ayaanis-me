@@ -33,6 +33,7 @@ export const metadata: Metadata = {
   },
   description,
   keywords: [
+    "Ayaan Aatif",
     "Hafiz Ayaan Aatif",
     "robotics researcher",
     "digital twin",
