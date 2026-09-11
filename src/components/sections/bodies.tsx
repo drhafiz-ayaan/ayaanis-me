@@ -1,7 +1,15 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { ExternalLink } from "lucide-react";
+
+// Reads a segmented PNG into a volumetric point cloud on the client — never
+// server-rendered, and only loaded when the Mission module is actually opened.
+const HologramAvatar = dynamic(
+  () => import("@/components/three/HologramAvatar"),
+  { ssr: false }
+);
 import {
   mission,
   publications,
@@ -121,15 +129,29 @@ function Tag({ children }: { children: React.ReactNode }) {
 export function MissionBody() {
   return (
     <div className="space-y-7">
-      <p className="font-display text-xl font-semibold leading-snug text-ink sm:text-2xl">
-        {mission.headline}
-      </p>
-      <div className="space-y-4">
-        {mission.body.map((p) => (
-          <p key={p.slice(0, 24)} className="leading-relaxed text-ink-dim">
-            {p}
+      <div className="grid gap-6 sm:grid-cols-[minmax(0,15rem)_1fr] sm:gap-8">
+        <figure className="relative overflow-hidden rounded-2xl border border-cyan/20 bg-gradient-to-b from-cyan/[0.05] to-transparent">
+          {/* projector plinth glow under the cloud */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-6 bottom-3 h-10 rounded-[50%] bg-cyan/25 blur-2xl"
+          />
+          <HologramAvatar className="relative h-[21rem] w-full sm:h-[24rem]" />
+          <figcaption className="absolute inset-x-0 bottom-0 px-4 pb-3 text-center">
+            <span className="label-hud">Subject · live reconstruction</span>
+          </figcaption>
+        </figure>
+
+        <div className="space-y-4">
+          <p className="font-display text-xl font-semibold leading-snug text-ink sm:text-2xl">
+            {mission.headline}
           </p>
-        ))}
+          {mission.body.map((p) => (
+            <p key={p.slice(0, 24)} className="leading-relaxed text-ink-dim">
+              {p}
+            </p>
+          ))}
+        </div>
       </div>
       <div className="rounded-2xl border border-cyan/25 bg-cyan/[0.06] p-5 sm:p-6">
         <p className="label-hud mb-2">Long-term vision</p>
