@@ -5,7 +5,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import Landing from "@/components/landing/Landing";
 import CommandCenter from "@/components/hub/CommandCenter";
 import { useCapability } from "@/hooks/useCapability";
+import { useDeferredMount } from "@/hooks/useDeferredMount";
 import { useSystem } from "@/store/useSystem";
+import { SceneBoundary } from "@/components/three/SceneBoundary";
 
 // The 3D scenes are the heaviest assets — never server-render them, and keep
 // them out of the initial bundle so first paint is text, not WebGL. The room
@@ -23,6 +25,8 @@ export default function Home() {
   useCapability();
   const phase = useSystem((s) => s.phase);
   const inHub = phase === "hub";
+  // three.js waits for idle so it never blocks first paint
+  const gfxReady = useDeferredMount();
 
   return (
     <main className="relative min-h-dvh overflow-x-hidden bg-void">
@@ -47,10 +51,14 @@ export default function Home() {
         transition={{ duration: 1.3, ease: [0.16, 1, 0.3, 1] }}
         className="pointer-events-none fixed inset-0"
       >
-        <ParticleGlobe className="h-full w-full" />
+        {gfxReady && (
+          <SceneBoundary label="globe">
+            <ParticleGlobe className="h-full w-full" />
+          </SceneBoundary>
+        )}
       </motion.div>
 
-      {inHub && (
+      {inHub && gfxReady && (
         <motion.div
           aria-hidden
           initial={{ opacity: 0, scale: 1.12 }}
@@ -58,7 +66,9 @@ export default function Home() {
           transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
           className="pointer-events-none fixed inset-0"
         >
-          <CommandRoom className="h-full w-full" />
+          <SceneBoundary label="room">
+            <CommandRoom className="h-full w-full" />
+          </SceneBoundary>
         </motion.div>
       )}
 

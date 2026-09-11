@@ -46,3 +46,6 @@ next-env.d.ts
 *.heic
 !public/**/*.jpg
 !public/**/*.jpeg
+
+# lighthouse reports
+lh*.json

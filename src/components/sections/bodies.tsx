@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
+import { SceneBoundary } from "@/components/three/SceneBoundary";
 import { ExternalLink } from "lucide-react";
 
 // Reads a segmented PNG into a volumetric point cloud on the client — never
@@ -107,7 +108,7 @@ function Chip({ children, className }: { children: React.ReactNode; className?: 
     <span
       className={cn(
         "inline-flex items-center rounded-full border px-2.5 py-1",
-        "font-mono text-[10px] uppercase tracking-[0.14em]",
+        "font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.14em]",
         className
       )}
     >
@@ -118,7 +119,7 @@ function Chip({ children, className }: { children: React.ReactNode; className?: 
 
 function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-md border border-hairline px-2 py-0.5 font-mono text-[10px] text-ink-dim">
+    <span className="rounded-md border border-hairline px-2 py-0.5 font-mono text-[12px] sm:text-[10px] text-ink-dim">
       {children}
     </span>
   );
@@ -136,7 +137,9 @@ export function MissionBody() {
             aria-hidden
             className="pointer-events-none absolute inset-x-6 bottom-3 h-10 rounded-[50%] bg-cyan/25 blur-2xl"
           />
-          <HologramAvatar className="relative h-[21rem] w-full sm:h-[24rem]" />
+          <SceneBoundary label="hologram">
+            <HologramAvatar className="relative h-[21rem] w-full sm:h-[24rem]" />
+          </SceneBoundary>
           <figcaption className="absolute inset-x-0 bottom-0 px-4 pb-3 text-center">
             <span className="label-hud">Subject · live reconstruction</span>
           </figcaption>
@@ -167,7 +170,7 @@ export function MissionBody() {
           <a
             key={label}
             href={href}
-            className="glass-hover inline-flex items-center gap-1.5 rounded-full border border-hairline px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-dim hover:text-cyan"
+            className="glass-hover inline-flex items-center gap-1.5 rounded-full border border-hairline px-3.5 py-1.5 font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.16em] text-ink-dim hover:text-cyan"
           >
             {label}
             <ExternalLink size={11} />
@@ -189,11 +192,11 @@ export function ResearchBody() {
           return (
             <Card key={p.id}>
               <div className="flex flex-wrap items-center gap-2.5">
-                <span className="font-mono text-[10px] tracking-[0.2em] text-cyan/70">
+                <span className="font-mono text-[12px] sm:text-[10px] tracking-[0.2em] text-cyan/70">
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <Chip className={s.cls}>{s.label}</Chip>
-                <span className="font-mono text-[10px] text-ink-mute">
+                <span className="font-mono text-[12px] sm:text-[10px] text-ink-mute">
                   {p.domain}
                 </span>
               </div>
@@ -230,7 +233,7 @@ export function ResearchBody() {
               {p.doiUrl && (
                 <a
                   href={p.doiUrl}
-                  className="mt-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-cyan transition-opacity hover:opacity-75"
+                  className="mt-4 inline-flex items-center gap-1.5 font-mono text-[12px] sm:text-[11px] text-cyan transition-opacity hover:opacity-75"
                 >
                   doi:{p.doi}
                   <ExternalLink size={11} />
@@ -274,7 +277,7 @@ export function LabBody() {
             <h3 className="font-display text-lg font-semibold text-ink">
               {p.name}
             </h3>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-cyan/80">
+            <span className="font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.14em] text-cyan/80">
               {p.kicker}
             </span>
           </div>
@@ -299,7 +302,7 @@ export function LabBody() {
             {p.repo && (
               <a
                 href={p.repo}
-                className="ml-1 inline-flex items-center gap-1.5 font-mono text-[10px] text-cyan hover:opacity-75"
+                className="ml-1 inline-flex items-center gap-1.5 font-mono text-[12px] sm:text-[10px] text-cyan hover:opacity-75"
               >
                 repository
                 <ExternalLink size={10} />
@@ -341,7 +344,7 @@ export function VenturesBody() {
               </h3>
               <Chip className={s.cls}>{s.label}</Chip>
             </div>
-            <p className="relative mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-mute">
+            <p className="relative mt-1 font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.18em] text-ink-mute">
               {v.tagline}
             </p>
             <p className="relative mt-3 text-sm leading-relaxed text-ink-dim">
@@ -399,7 +402,7 @@ export function ExperienceBody() {
                 <h3 className="font-display text-base font-semibold text-ink">
                   {r.title}
                 </h3>
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cyan/80">
+                <span className="font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.16em] text-cyan/80">
                   {r.period}
                 </span>
               </div>
@@ -426,7 +429,7 @@ export function ExperienceBody() {
                 {e.credential}
               </h4>
               <p className="mt-1 text-xs text-ink-dim">{e.school}</p>
-              <p className="mt-1 font-mono text-[10px] text-cyan/70">
+              <p className="mt-1 font-mono text-[12px] sm:text-[10px] text-cyan/70">
                 {e.period}
               </p>
               <p className="mt-2 text-xs leading-relaxed text-ink-mute">
@@ -463,7 +466,7 @@ export function AchievementsBody() {
           transition={{ duration: 0.5 }}
           className={cn("rounded-2xl border p-5", TIER[a.tier])}
         >
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-mute">
+          <p className="font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.18em] text-ink-mute">
             {a.year}
           </p>
           <h3 className="mt-2 font-display text-sm font-semibold leading-snug text-ink">
@@ -519,7 +522,7 @@ export function SkillsBody() {
                   <span className="text-[13px] font-medium text-ink">
                     {s.name}
                   </span>
-                  <span className="font-mono text-[10px] tabular-nums text-ink-mute">
+                  <span className="font-mono text-[12px] sm:text-[10px] tabular-nums text-ink-mute">
                     {s.level}
                   </span>
                 </div>

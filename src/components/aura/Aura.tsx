@@ -99,7 +99,7 @@ export default function Aura() {
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan opacity-60" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan" />
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-ink">
+        <span className="font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.24em] text-ink">
           {open ? "Close" : "AURA"}
         </span>
       </motion.button>
@@ -130,7 +130,7 @@ export default function Aura() {
                   <p className="font-display text-sm font-semibold text-ink">
                     AURA
                   </p>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-mute">
+                  <p className="font-mono text-[12px] sm:text-[9px] uppercase tracking-[0.18em] text-ink-mute">
                     Portfolio assistant
                   </p>
                 </div>
@@ -169,7 +169,7 @@ export default function Aura() {
                         openSection(m.section!);
                         setAura(false);
                       }}
-                      className="glass-hover cursor-pointer rounded-full border border-cyan/30 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-cyan"
+                      className="glass-hover cursor-pointer rounded-full border border-cyan/30 px-3 py-1.5 font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.14em] text-cyan"
                     >
                       Open {sections.find((s) => s.id === m.section)?.label}
                     </button>
@@ -182,7 +182,7 @@ export default function Aura() {
                           key={s}
                           type="button"
                           onClick={() => send(s)}
-                          className="cursor-pointer rounded-full border border-hairline px-2.5 py-1 text-[11px] text-ink-mute transition-colors hover:border-cyan/40 hover:text-cyan"
+                          className="cursor-pointer rounded-full border border-hairline px-2.5 py-1 text-[12px] sm:text-[11px] text-ink-mute transition-colors hover:border-cyan/40 hover:text-cyan"
                         >
                           {s}
                         </button>

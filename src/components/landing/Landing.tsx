@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { identity, roles, links } from "@/content/profile";
 import { useSystem } from "@/store/useSystem";
@@ -13,181 +13,142 @@ const BOOT_LINES = [
   "system ready",
 ];
 
-/** Terminal-style boot readout that runs while the globe assembles. */
-function BootReadout({ onDone }: { onDone: () => void }) {
-  const [step, setStep] = useState(0);
+const BOOT_STEP_MS = 300;
 
+/**
+ * Terminal-style boot readout.
+ *
+ * All four lines are in the DOM from the first paint and cascade in via CSS
+ * animation-delay. Revealing them with JS timers made the last line paint at
+ * ~4.1s, and Lighthouse picked that up as the LCP element — a decorative
+ * flourish was setting the page's headline metric.
+ */
+function BootReadout({ onDone }: { onDone: () => void }) {
   useEffect(() => {
-    if (step >= BOOT_LINES.length) {
-      const t = setTimeout(onDone, 420);
-      return () => clearTimeout(t);
-    }
-    const t = setTimeout(() => setStep((s) => s + 1), 420);
+    const t = setTimeout(onDone, BOOT_LINES.length * BOOT_STEP_MS + 320);
     return () => clearTimeout(t);
-  }, [step, onDone]);
+  }, [onDone]);
 
   return (
-    <motion.ul
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.5 }}
-      className="font-mono text-[11px] leading-relaxed tracking-[0.16em] text-ink-mute uppercase"
-    >
-      {BOOT_LINES.slice(0, step).map((line, i) => (
-        <motion.li
+    <ul className="font-mono text-[12px] uppercase leading-relaxed tracking-[0.16em] text-ink-mute sm:text-[11px]">
+      {BOOT_LINES.map((line, i) => (
+        <li
           key={line}
-          initial={{ opacity: 0, x: -6 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3 }}
-          className="flex items-center gap-2"
+          className="rise flex items-center gap-2"
+          style={{ animationDelay: `${i * BOOT_STEP_MS}ms` }}
         >
           <span className="text-cyan">›</span>
           <span>{line}</span>
-          {i === step - 1 && step < BOOT_LINES.length && (
-            <span className="ml-1 inline-block h-3 w-1.5 animate-pulse bg-cyan" />
-          )}
-        </motion.li>
+        </li>
       ))}
-    </motion.ul>
+    </ul>
   );
 }
 
+/**
+ * The hero is plain markup with a CSS-driven entrance.
+ *
+ * Everything here is above the fold and LCP-critical, so none of it may depend
+ * on hydration to become visible. Framer Motion writes its `initial` styles
+ * into the SSR HTML, so an opacity-0 hero stayed invisible until hydration
+ * finished — 4.5s LCP on throttled mobile. CSS animations start at first paint.
+ */
 export default function Landing() {
   const phase = useSystem((s) => s.phase);
   const finishBoot = useSystem((s) => s.finishBoot);
   const enterSystem = useSystem((s) => s.enterSystem);
 
-  const showTitle = phase === "landing";
-
   return (
     <div className="relative z-10 flex min-h-dvh flex-col items-center justify-center px-6 text-center">
-      <AnimatePresence mode="wait">
+      {/* boot readout is an overlay at the foot, never a gate on the content */}
+      <AnimatePresence>
         {phase === "boot" && (
-          <motion.div key="boot" className="absolute">
+          <motion.div
+            key="boot"
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45 }}
+            className="pointer-events-none absolute bottom-6 z-20 sm:bottom-10"
+          >
             <BootReadout onDone={finishBoot} />
           </motion.div>
         )}
-
-        {showTitle && (
-          <motion.div
-            key="title"
-            initial="hidden"
-            animate="show"
-            variants={{
-              hidden: {},
-              show: { transition: { staggerChildren: 0.13, delayChildren: 0.1 } },
-            }}
-            className="flex flex-col items-center"
-          >
-            <motion.p
-              variants={{
-                hidden: { opacity: 0, y: 12 },
-                show: { opacity: 1, y: 0 },
-              }}
-              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-              className="label-hud mb-6"
-            >
-              {identity.location} · {identity.role}
-            </motion.p>
-
-            <motion.h1
-              variants={{
-                hidden: { opacity: 0, y: 22, filter: "blur(10px)" },
-                show: { opacity: 1, y: 0, filter: "blur(0px)" },
-              }}
-              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-              className="text-gradient-cyan font-display text-[clamp(2.1rem,7.5vw,5.4rem)] font-bold leading-[1.02] tracking-tight"
-            >
-              {identity.fullName}
-            </motion.h1>
-
-            <motion.div
-              variants={{
-                hidden: { opacity: 0, scaleX: 0 },
-                show: { opacity: 1, scaleX: 1 },
-              }}
-              transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-              className="rule-glow mt-7 h-px w-[min(30rem,80vw)]"
-            />
-
-            <motion.ul
-              variants={{
-                hidden: {},
-                show: { transition: { staggerChildren: 0.08, delayChildren: 0.2 } },
-              }}
-              className="mt-7 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[11px] uppercase tracking-[0.2em] text-ink-dim sm:text-xs"
-            >
-              {roles.map((r, i) => (
-                <motion.li
-                  key={r}
-                  variants={{
-                    hidden: { opacity: 0, y: 8 },
-                    show: { opacity: 1, y: 0 },
-                  }}
-                  transition={{ duration: 0.5 }}
-                  className="flex items-center gap-3"
-                >
-                  {i > 0 && <span className="text-cyan/40">/</span>}
-                  <span>{r}</span>
-                </motion.li>
-              ))}
-            </motion.ul>
-
-            <motion.p
-              variants={{
-                hidden: { opacity: 0, y: 10 },
-                show: { opacity: 1, y: 0 },
-              }}
-              transition={{ duration: 0.8, delay: 0.1 }}
-              className="mt-8 max-w-[42ch] text-balance text-sm leading-relaxed text-ink-dim sm:text-base"
-            >
-              {identity.brand}
-            </motion.p>
-
-            <motion.div
-              variants={{
-                hidden: { opacity: 0, y: 14 },
-                show: { opacity: 1, y: 0 },
-              }}
-              transition={{ duration: 0.8, delay: 0.25 }}
-              className="mt-11 flex flex-col items-center gap-6"
-            >
-              <button
-                type="button"
-                onClick={enterSystem}
-                className={cn(
-                  "group relative overflow-hidden rounded-full px-9 py-3.5",
-                  "glass glass-hover font-mono text-[11px] uppercase tracking-[0.28em] text-ink",
-                  "cursor-pointer"
-                )}
-              >
-                <span
-                  aria-hidden
-                  className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-cyan/25 to-transparent transition-transform duration-[1100ms] ease-out group-hover:translate-x-full"
-                />
-                <span className="relative">Enter System</span>
-              </button>
-
-              <nav
-                aria-label="External profiles"
-                className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-mute"
-              >
-                <a className="transition-colors hover:text-cyan" href={links.github}>
-                  GitHub
-                </a>
-                <a className="transition-colors hover:text-cyan" href={links.scholar}>
-                  Scholar
-                </a>
-                <a className="transition-colors hover:text-cyan" href={links.linkedin}>
-                  LinkedIn
-                </a>
-                <a className="transition-colors hover:text-cyan" href={links.email}>
-                  Email
-                </a>
-              </nav>
-            </motion.div>
-          </motion.div>
-        )}
       </AnimatePresence>
+
+      <div className="flex w-full max-w-3xl flex-col items-center">
+        <p className="label-hud rise mb-6 max-w-full text-balance">
+          {identity.location} · {identity.role}
+        </p>
+
+        <h1
+          className="text-gradient-cyan rise font-display text-[clamp(2.1rem,7.5vw,5.4rem)] font-bold leading-[1.02] tracking-tight"
+          style={{ animationDelay: "60ms" }}
+        >
+          {identity.fullName}
+        </h1>
+
+        <div
+          className="rule-glow rise mt-7 h-px w-[min(30rem,80vw)]"
+          style={{ animationDelay: "140ms" }}
+        />
+
+        <ul
+          className="rise mt-7 flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[12px] uppercase tracking-[0.2em] text-ink-dim sm:text-xs"
+          style={{ animationDelay: "200ms" }}
+        >
+          {roles.map((r, i) => (
+            <li key={r} className="flex items-center gap-3">
+              {i > 0 && <span className="text-cyan/40">/</span>}
+              <span>{r}</span>
+            </li>
+          ))}
+        </ul>
+
+        <p
+          className="rise mt-8 max-w-[42ch] text-balance text-sm leading-relaxed text-ink-dim sm:text-base"
+          style={{ animationDelay: "260ms" }}
+        >
+          {identity.brand}
+        </p>
+
+        <div
+          className="rise mt-11 flex flex-col items-center gap-6"
+          style={{ animationDelay: "330ms" }}
+        >
+          <button
+            type="button"
+            onClick={enterSystem}
+            className={cn(
+              "group relative overflow-hidden rounded-full px-9 py-3.5",
+              "glass glass-hover font-mono text-[12px] uppercase tracking-[0.28em] text-ink sm:text-[11px]",
+              "cursor-pointer"
+            )}
+          >
+            <span
+              aria-hidden
+              className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-cyan/25 to-transparent transition-transform duration-[1100ms] ease-out group-hover:translate-x-full"
+            />
+            <span className="relative">Enter System</span>
+          </button>
+
+          <nav
+            aria-label="External profiles"
+            className="flex max-w-full flex-wrap items-center justify-center gap-y-2 gap-x-5 font-mono text-[12px] uppercase tracking-[0.18em] text-ink-mute sm:text-[10px]"
+          >
+            <a className="transition-colors hover:text-cyan" href={links.github}>
+              GitHub
+            </a>
+            <a className="transition-colors hover:text-cyan" href={links.scholar}>
+              Scholar
+            </a>
+            <a className="transition-colors hover:text-cyan" href={links.linkedin}>
+              LinkedIn
+            </a>
+            <a className="transition-colors hover:text-cyan" href={links.email}>
+              Email
+            </a>
+          </nav>
+        </div>
+      </div>
     </div>
   );
 }

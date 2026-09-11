@@ -25,7 +25,7 @@ function Telemetry() {
           <dd className="font-display text-2xl font-bold text-cyan tabular-nums">
             {s.v}
           </dd>
-          <dt className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-mute">
+          <dt className="font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.2em] text-ink-mute">
             {s.k}
           </dt>
         </div>
@@ -94,13 +94,13 @@ export default function CommandCenter() {
                   "cursor-pointer rounded-2xl p-5 text-left"
                 )}
               >
-                <span className="font-mono text-[10px] tracking-[0.2em] text-cyan/70">
+                <span className="font-mono text-[12px] sm:text-[10px] tracking-[0.2em] text-cyan/70">
                   {s.code}
                 </span>
                 <span className="mt-3 font-display text-[15px] font-semibold leading-snug text-ink">
                   {s.label}
                 </span>
-                <span className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute">
+                <span className="mt-1.5 font-mono text-[12px] sm:text-[10px] uppercase tracking-[0.16em] text-ink-mute">
                   {s.hint}
                 </span>
 
