@@ -12,10 +12,8 @@ import { SceneBoundary } from "@/components/three/SceneBoundary";
 // The 3D scenes are the heaviest assets — never server-render them, and keep
 // them out of the initial bundle so first paint is text, not WebGL. The room
 // only loads once you enter the system, so the landing never pays for it.
-const ParticleGlobe = dynamic(
-  () => import("@/components/three/ParticleGlobe"),
-  { ssr: false }
-);
+// The landing owns its own scene (HeroCloud), sized to the layout rather than
+// stretched across the viewport.
 const CommandRoom = dynamic(() => import("@/components/three/CommandRoom"), {
   ssr: false,
 });
@@ -43,20 +41,6 @@ export default function Home() {
             "radial-gradient(ellipse 80% 55% at 50% 45%, rgb(13 148 178 / 0.18), transparent 70%), radial-gradient(ellipse 60% 50% at 80% 80%, rgb(167 139 250 / 0.10), transparent 70%)",
         }}
       />
-
-      {/* The globe flies apart as you enter; the room fades up behind the hub */}
-      <motion.div
-        aria-hidden
-        animate={{ opacity: inHub ? 0 : 1, scale: inHub ? 1.6 : 1 }}
-        transition={{ duration: 1.3, ease: [0.16, 1, 0.3, 1] }}
-        className="pointer-events-none fixed inset-0"
-      >
-        {gfxReady && (
-          <SceneBoundary label="globe">
-            <ParticleGlobe className="h-full w-full" />
-          </SceneBoundary>
-        )}
-      </motion.div>
 
       {inHub && gfxReady && (
         <motion.div

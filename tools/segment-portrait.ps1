@@ -1,121 +1,188 @@
 param(
-  [string]$Src = "E:\Portfolio\photos\ayaan-01.jpeg",
-  [string]$Out = "E:\Portfolio\ayaanis-me\public\avatar\ayaan-cloud.png",
-  [string]$Debug = "C:\Users\MSI\AppData\Local\Temp\claude\E--Portfolio\b3bda2ab-07c6-4d8c-8374-fc8fcf5e3e2f\scratchpad\cloud-debug.png",
-  [int]$CropX = 338, [int]$CropY = 508, [int]$CropW = 368, [int]$CropH = 772,
-  [int]$OutW = 180,
-  [double]$DarkLum = 0.30      # below this = suit / hair
+  [string]$Src   = "E:\Portfolio\photos\ayaan-01.jpeg",
+  [string]$Out   = "E:\Portfolio\ayaanis-me\public\avatar\ayaan-cloud.png",
+  [string]$Debug = "",
+  # generous box around the figure; the flood fill does the precise work
+  [int]$CropX = 318, [int]$CropY = 498, [int]$CropW = 408, [int]$CropH = 782,
+  [int]$OutW  = 190,
+  [double]$BgLum  = 0.44,   # brighter than this is background-ish
+  [double]$DimLum = 0.34,   # ...or this bright but desaturated (road, haze)
+  [double]$DimSat = 0.20
 )
+
+<#
+  Portrait -> subject-only RGBA, for the point-cloud hologram.
+
+  Earlier versions classified each pixel independently ("dark = subject") and
+  produced a mangled silhouette: the hair fragmented, and a bright wedge of
+  building survived because it happened to sit inside the kept blob.
+
+  This version segments by CONNECTIVITY. Background is whatever the image
+  border can reach by walking through background-ish pixels; anything the
+  flood cannot reach is subject. Dark hair stays attached to a dark suit, and
+  a patch of sky fenced off by the body cannot be smuggled in.
+
+  Implementation notes, both learned the hard way:
+   * Everything is a FLAT array indexed y*W+x. PowerShell cannot parse a 2-D
+     index inside a method-call argument, and multi-statement lines with 2-D
+     assignments fail with CannotIndex.
+   * Variable names are >1 char and distinct. PowerShell is case-insensitive,
+     so a `$G` channel array silently aliases a `$g` Graphics handle.
+#>
+
 Add-Type -AssemblyName System.Drawing
 $img = [System.Drawing.Image]::FromFile($Src)
-Write-Output ("source: {0} x {1}" -f $img.Width, $img.Height)
-
 $OutH = [int][Math]::Round($OutW * $CropH / $CropW)
+$total = $OutW * $OutH
 
-# downsample the crop to the point-grid resolution
 $small = New-Object System.Drawing.Bitmap($OutW, $OutH, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$g = [System.Drawing.Graphics]::FromImage($small)
-$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-$g.PixelOffsetMode   = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-$g.DrawImage($img, (New-Object System.Drawing.Rectangle(0,0,$OutW,$OutH)), $CropX, $CropY, $CropW, $CropH, [System.Drawing.GraphicsUnit]::Pixel)
-$g.Dispose(); $img.Dispose()
+$gfx = [System.Drawing.Graphics]::FromImage($small)
+$gfx.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+$gfx.PixelOffsetMode   = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+$gfx.DrawImage($img, (New-Object System.Drawing.Rectangle(0,0,$OutW,$OutH)), $CropX, $CropY, $CropW, $CropH, [System.Drawing.GraphicsUnit]::Pixel)
+$gfx.Dispose(); $img.Dispose()
 
-# ---- classify subject vs background ----
-# The suit and hair are far darker than sky/building/road, and skin is caught
-# by a standard R>G>B chroma rule. Everything else is background.
-$mask = New-Object 'bool[,]' $OutW, $OutH
+# ---------- read pixels once, via LockBits (GetPixel per-pixel is far too slow) ----------
+$rect = New-Object System.Drawing.Rectangle(0, 0, $OutW, $OutH)
+$data = $small.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$bytes = New-Object byte[] ($data.Stride * $OutH)
+[System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
+$small.UnlockBits($data)
+$stride = $data.Stride
+$small.Dispose()
+
+$chR = New-Object byte[] $total
+$chG = New-Object byte[] $total
+$chB = New-Object byte[] $total
+$isBgish = New-Object bool[] $total
+
 for ($y = 0; $y -lt $OutH; $y++) {
+  $row = $y * $stride
+  $base = $y * $OutW
   for ($x = 0; $x -lt $OutW; $x++) {
-    $p = $small.GetPixel($x, $y)
-    $r = [double]$p.R; $gr = [double]$p.G; $b = [double]$p.B
-    $lum = (0.2126*$r + 0.7152*$gr + 0.0722*$b) / 255.0
-    $mx = [Math]::Max($r, [Math]::Max($gr, $b))
-    $mn = [Math]::Min($r, [Math]::Min($gr, $b))
+    $o = $row + $x * 4          # BGRA
+    $bb = $bytes[$o]; $gg = $bytes[$o+1]; $rr = $bytes[$o+2]
+    $i = $base + $x
+    $chR[$i] = $rr; $chG[$i] = $gg; $chB[$i] = $bb
 
-    # Foliage is dark enough to pass a pure luminance test, so reject anything
-    # green-dominant first. The suit is near-neutral, so it survives this.
-    $isFoliage = (($gr - $r) -gt 7) -and (($gr - $b) -gt 7)
+    $rf = $rr / 255.0; $gf = $gg / 255.0; $bf = $bb / 255.0
+    $lum = 0.2126*$rf + 0.7152*$gf + 0.0722*$bf
+    $mx = [Math]::Max($rf, [Math]::Max($gf, $bf))
+    $mn = [Math]::Min($rf, [Math]::Min($gf, $bf))
+    $sat = 0.0
+    if ($mx -gt 0) { $sat = ($mx - $mn) / $mx }
+    # Anything where green leads and there is real colour is vegetation,
+    # however dark. Shadowed trees are too dim for a luminance test but they
+    # are never neutral, and the suit is neutral however dark it gets.
+    $foliage = ($gf -ge $rf) -and ($gf -ge $bf) -and ($sat -gt 0.10)
 
-    $isDark = ($lum -lt $DarkLum) -and (-not $isFoliage)
-    $isSkin = ($r -gt 80) -and ($gr -gt 35) -and ($b -gt 15) -and
-              (($mx - $mn) -gt 14) -and ($r -gt $gr) -and ($gr -ge $b) -and
-              (($r - $gr) -gt 8) -and ($lum -lt 0.82)
-    $mask[$x,$y] = $isDark -or $isSkin
+    # Sunlit skin is brighter than BgLum, so without this guard the face and
+    # hands classify as background and the flood eats them out of the figure.
+    # Must be tight: beige render and reddish paving also satisfy a loose
+    # R>G>B test, and letting them through turns most of the frame into
+    # "subject". Real skin has a much wider red-blue gap and real saturation.
+    $skin = ($rf -gt 0.30) -and ($rf -lt 0.93) -and
+            (($rf - $gf) -gt 0.10) -and (($gf - $bf) -gt 0.02) -and
+            (($rf - $bf) -gt 0.18) -and ($sat -gt 0.20)
+
+    $isBgish[$i] = (-not $skin) -and (
+      ($lum -gt $BgLum) -or $foliage -or (($lum -gt $DimLum) -and ($sat -lt $DimSat))
+    )
   }
 }
 
-# ---- keep only the largest connected blob (drops sky specks, shadows, bins) ----
-$label = New-Object 'int[,]' $OutW, $OutH
-$sizes = @{}
-$next = 0
-for ($y = 0; $y -lt $OutH; $y++) {
-  for ($x = 0; $x -lt $OutW; $x++) {
-    if (-not $mask[$x,$y] -or $label[$x,$y] -ne 0) { continue }
-    $next++
-    $n = 0
-    $stack = New-Object System.Collections.Generic.Stack[int[]]
-    $stack.Push(@($x,$y))
-    while ($stack.Count -gt 0) {
-      $c = $stack.Pop(); $cx = $c[0]; $cy = $c[1]
-      if ($cx -lt 0 -or $cy -lt 0 -or $cx -ge $OutW -or $cy -ge $OutH) { continue }
-      if (-not $mask[$cx,$cy] -or $label[$cx,$cy] -ne 0) { continue }
-      $label[$cx,$cy] = $next; $n++
-      $stack.Push(@(($cx+1),$cy)); $stack.Push(@(($cx-1),$cy))
-      $stack.Push(@($cx,($cy+1))); $stack.Push(@($cx,($cy-1)))
-    }
-    $sizes[$next] = $n
-  }
-}
-$best = 0; $bestN = -1
-foreach ($k in $sizes.Keys) { if ($sizes[$k] -gt $bestN) { $bestN = $sizes[$k]; $best = $k } }
-Write-Output ("blobs: {0}; largest = {1} px ({2:P1} of frame)" -f $next, $bestN, ($bestN / [double]($OutW*$OutH)))
+# ---------- flood the background in from the border ----------
+# The bottom edge is NOT seeded: the figure stands on it, so seeding there
+# would let the fill walk straight up through the legs.
+$isBg = New-Object bool[] $total
+$st = New-Object System.Collections.Generic.Stack[int]
+for ($x = 0; $x -lt $OutW; $x++) { $st.Push($x) }
+for ($y = 0; $y -lt $OutH; $y++) { $st.Push($y*$OutW); $st.Push($y*$OutW + $OutW - 1) }
+# Seed the bottom corners only. Ground in the corners needs a way in, but the
+# middle of the bottom edge is where the figure stands — seeding there lets
+# the fill climb the legs and hollow out the body.
+$bottom = ($OutH - 1) * $OutW
+for ($x = 0; $x -lt [int]($OutW * 0.26); $x++) { $st.Push($bottom + $x) }
+for ($x = [int]($OutW * 0.74); $x -lt $OutW; $x++) { $st.Push($bottom + $x) }
 
-# ---- per-row trim ----
-# Shadowed foliage down the left edge is dark enough to classify as subject and
-# touches the figure at the top, so it survives blob selection. The figure,
-# however, always crosses the centre of the frame. Keep only horizontal runs
-# that reach the core band; detached side strips disappear.
-$loBand = [int]($OutW * 0.24)
-$hiBand = [int]($OutW * 0.76)
-$trimmed = 0
-for ($y = 0; $y -lt $OutH; $y++) {
-  $x = 0
-  while ($x -lt $OutW) {
-    if ($label[$x,$y] -ne $best) { $x++; continue }
-    $s = $x
-    while ($x -lt $OutW -and $label[$x,$y] -eq $best) { $x++ }
-    $e = $x - 1
-    if ($e -lt $loBand -or $s -gt $hiBand) {
-      for ($k = $s; $k -le $e; $k++) { $label[$k,$y] = -1; $trimmed++ }
-    }
-  }
+while ($st.Count -gt 0) {
+  $i = $st.Pop()
+  if ($isBg[$i] -or -not $isBgish[$i]) { continue }
+  $isBg[$i] = $true
+  $cx = $i % $OutW
+  $cy = [int][Math]::Floor($i / $OutW)
+  if ($cx -gt 0)          { $st.Push($i - 1) }
+  if ($cx -lt $OutW - 1)  { $st.Push($i + 1) }
+  if ($cy -gt 0)          { $st.Push($i - $OutW) }
+  if ($cy -lt $OutH - 1)  { $st.Push($i + $OutW) }
 }
-Write-Output ("per-row trim removed {0} px" -f $trimmed)
 
-# ---- write RGBA: subject keeps its colour, background goes transparent ----
+# ---------- subject = whatever the flood never reached ----------
+# Interior holes fill themselves: a bright shirt highlight is not
+# border-connected, so it stays part of the subject.
+$lab = New-Object int[] $total
+$bestLab = 0; $bestN = -1; $next = 0
+for ($i = 0; $i -lt $total; $i++) {
+  if ($isBg[$i] -or $lab[$i] -ne 0) { continue }
+  $next++; $n = 0
+  $s2 = New-Object System.Collections.Generic.Stack[int]
+  $s2.Push($i)
+  while ($s2.Count -gt 0) {
+    $j = $s2.Pop()
+    if ($isBg[$j] -or $lab[$j] -ne 0) { continue }
+    $lab[$j] = $next; $n++
+    $jx = $j % $OutW
+    $jy = [int][Math]::Floor($j / $OutW)
+    if ($jx -gt 0)         { $s2.Push($j - 1) }
+    if ($jx -lt $OutW - 1) { $s2.Push($j + 1) }
+    if ($jy -gt 0)         { $s2.Push($j - $OutW) }
+    if ($jy -lt $OutH - 1) { $s2.Push($j + $OutW) }
+  }
+  if ($n -gt $bestN) { $bestN = $n; $bestLab = $next }
+}
+
+# ---------- write RGBA out via LockBits as well ----------
 $outBmp = New-Object System.Drawing.Bitmap($OutW, $OutH, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$dbg    = New-Object System.Drawing.Bitmap($OutW, $OutH, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$od = $outBmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$ob = New-Object byte[] ($od.Stride * $OutH)
+
+$dbgBytes = $null
+if ($Debug) { $dbgBytes = New-Object byte[] ($od.Stride * $OutH) }
+
 $kept = 0
 for ($y = 0; $y -lt $OutH; $y++) {
+  $row = $y * $od.Stride
+  $base = $y * $OutW
   for ($x = 0; $x -lt $OutW; $x++) {
-    $inSubject = ($label[$x,$y] -eq $best)
-    $p = $small.GetPixel($x, $y)
-    if ($inSubject) {
-      $outBmp.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(255, $p.R, $p.G, $p.B))
-      $dbg.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(255, 60, 230, 140))
+    $i = $base + $x
+    $o = $row + $x * 4
+    $inSub = ($lab[$i] -eq $bestLab)
+    if ($inSub) {
+      $ob[$o]   = $chB[$i]; $ob[$o+1] = $chG[$i]; $ob[$o+2] = $chR[$i]; $ob[$o+3] = 255
       $kept++
+      if ($dbgBytes) { $dbgBytes[$o] = 140; $dbgBytes[$o+1] = 230; $dbgBytes[$o+2] = 60; $dbgBytes[$o+3] = 255 }
     } else {
-      $outBmp.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(0, 0, 0, 0))
-      $dbg.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(255, $p.R, $p.G, $p.B))
+      $ob[$o] = 0; $ob[$o+1] = 0; $ob[$o+2] = 0; $ob[$o+3] = 0
+      if ($dbgBytes) { $dbgBytes[$o] = $chB[$i]; $dbgBytes[$o+1] = $chG[$i]; $dbgBytes[$o+2] = $chR[$i]; $dbgBytes[$o+3] = 255 }
     }
   }
 }
-$small.Dispose()
+[System.Runtime.InteropServices.Marshal]::Copy($ob, 0, $od.Scan0, $ob.Length)
+$outBmp.UnlockBits($od)
 
 $dir = Split-Path $Out -Parent
 if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
 $outBmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
-$dbg.Save($Debug, [System.Drawing.Imaging.ImageFormat]::Png)
-$outBmp.Dispose(); $dbg.Dispose()
+$outBmp.Dispose()
 
-Write-Output ("grid {0}x{1}; subject points = {2}; png = {3} KB" -f $OutW, $OutH, $kept, [int]((Get-Item $Out).Length/1KB))
+if ($dbgBytes) {
+  $dbgBmp = New-Object System.Drawing.Bitmap($OutW, $OutH, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $dd = $dbgBmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  [System.Runtime.InteropServices.Marshal]::Copy($dbgBytes, 0, $dd.Scan0, $dbgBytes.Length)
+  $dbgBmp.UnlockBits($dd)
+  $dbgBmp.Save($Debug, [System.Drawing.Imaging.ImageFormat]::Png)
+  $dbgBmp.Dispose()
+}
+
+Write-Output ("grid {0}x{1}  subject {2} px ({3:P1})  png {4} KB" -f `
+  $OutW, $OutH, $kept, ($kept/[double]$total), [int]((Get-Item $Out).Length/1KB))
