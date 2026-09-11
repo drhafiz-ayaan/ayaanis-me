@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { SceneBoundary } from "@/components/three/SceneBoundary";
@@ -11,6 +13,9 @@ const HologramAvatar = dynamic(
   () => import("@/components/three/HologramAvatar"),
   { ssr: false }
 );
+const LabScene = dynamic(() => import("@/components/three/LabScene"), {
+  ssr: false,
+});
 import {
   mission,
   publications,
@@ -268,9 +273,65 @@ export function ResearchBody() {
 
 /* ---------------- 03 · Robotics Lab ---------------- */
 
+const LAB_VIEWS = [
+  {
+    id: "swarm" as const,
+    label: "Swarm formation",
+    caption:
+      "Five units holding a V with no central coordinator. The links are drawn from live positions — each unit corrects against its neighbours, so the formation survives losing any of them.",
+  },
+  {
+    id: "uav" as const,
+    label: "UAV digital twin",
+    caption:
+      "Orbit pass with the LiDAR building the ground map underneath. Points resolve as the aircraft sweeps over them — the twin assembling from flight, not from a prior model.",
+  },
+];
+
 export function LabBody() {
+  const [view, setView] = useState<"swarm" | "uav">("swarm");
+  const active = LAB_VIEWS.find((v) => v.id === view)!;
+
   return (
-    <List>
+    <div className="space-y-8">
+      {/* live viewport */}
+      <figure className="overflow-hidden rounded-2xl border border-hairline bg-midnight/40">
+        <div className="flex items-center gap-1.5 border-b border-hairline px-3 py-2.5">
+          {LAB_VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setView(v.id)}
+              aria-pressed={view === v.id}
+              className={cn(
+                "cursor-pointer rounded-full px-3 py-1.5 font-mono text-[12px] uppercase tracking-[0.14em] transition-colors sm:text-[10px]",
+                view === v.id
+                  ? "bg-cyan/15 text-cyan-bright"
+                  : "text-ink-mute hover:text-ink-dim"
+              )}
+            >
+              {v.label}
+            </button>
+          ))}
+          <span className="ml-auto flex items-center gap-1.5 pr-1">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan" />
+            <span className="font-mono text-[12px] uppercase tracking-[0.14em] text-ink-mute sm:text-[10px]">
+              Live
+            </span>
+          </span>
+        </div>
+
+        <SceneBoundary label={`lab-${view}`}>
+          {/* key remounts the canvas so each scene starts from t=0 */}
+          <LabScene key={view} mode={view} className="h-[17rem] w-full sm:h-[21rem]" />
+        </SceneBoundary>
+
+        <figcaption className="border-t border-hairline px-4 py-3 text-xs leading-relaxed text-ink-mute">
+          {active.caption}
+        </figcaption>
+      </figure>
+
+      <List>
       {labProjects.map((p) => (
         <Card key={p.id}>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -311,7 +372,8 @@ export function LabBody() {
           </div>
         </Card>
       ))}
-    </List>
+      </List>
+    </div>
   );
 }
 
