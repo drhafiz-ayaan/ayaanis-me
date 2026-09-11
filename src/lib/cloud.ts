@@ -143,8 +143,8 @@ export function buildCloud(
  * array the figure uses. A loaded mesh would mean a second draw call and a
  * second asset on the critical path for something on screen for four seconds.
  */
-export function makeDronePoints(count: number, scale = 1) {
-  const out = new Float32Array(count * 3);
+/** Writes one point sampled on a quadcopter of `scale` into out[i*3..i*3+2]. */
+function sampleDronePoint(out: Float32Array, i: number, scale: number) {
   const HUB = 0.62 * scale;
   const hubs: [number, number][] = [
     [HUB, HUB],
@@ -159,44 +159,104 @@ export function makeDronePoints(count: number, scale = 1) {
   const wRotor = 0.46;
   // remainder -> gimbal
 
-  for (let i = 0; i < count; i++) {
-    const r = Math.random();
-    let x = 0;
-    let y = 0;
-    let z = 0;
+  const r = Math.random();
+  let x = 0;
+  let y = 0;
+  let z = 0;
 
-    if (r < wBody) {
-      // fuselage
-      x = (Math.random() - 0.5) * 0.62 * scale;
-      y = (Math.random() - 0.5) * 0.2 * scale;
-      z = (Math.random() - 0.5) * 0.8 * scale;
-    } else if (r < wBody + wArms) {
-      // an arm running from the body out to a hub
-      const [hx, hz] = hubs[(Math.random() * 4) | 0];
-      const t = Math.random();
-      x = hx * t + (Math.random() - 0.5) * 0.05 * scale;
-      y = (Math.random() - 0.5) * 0.05 * scale;
-      z = hz * t + (Math.random() - 0.5) * 0.05 * scale;
-    } else if (r < wBody + wArms + wRotor) {
-      // rotor disc: biased to the rim so it reads as a ring, not a blob
-      const [hx, hz] = hubs[(Math.random() * 4) | 0];
-      const a = Math.random() * Math.PI * 2;
-      const rad = (0.26 + Math.random() * 0.11) * scale;
-      x = hx + Math.cos(a) * rad;
-      y = 0.1 * scale + (Math.random() - 0.5) * 0.03 * scale;
-      z = hz + Math.sin(a) * rad;
-    } else {
-      // gimbal camera slung under the nose
-      x = (Math.random() - 0.5) * 0.16 * scale;
-      y = -0.2 * scale - Math.random() * 0.14 * scale;
-      z = 0.26 * scale + (Math.random() - 0.5) * 0.16 * scale;
-    }
-
-    out[i * 3] = x;
-    out[i * 3 + 1] = y;
-    out[i * 3 + 2] = z;
+  if (r < wBody) {
+    // fuselage
+    x = (Math.random() - 0.5) * 0.62 * scale;
+    y = (Math.random() - 0.5) * 0.2 * scale;
+    z = (Math.random() - 0.5) * 0.8 * scale;
+  } else if (r < wBody + wArms) {
+    // an arm running from the body out to a hub
+    const [hx, hz] = hubs[(Math.random() * 4) | 0];
+    const t = Math.random();
+    x = hx * t + (Math.random() - 0.5) * 0.05 * scale;
+    y = (Math.random() - 0.5) * 0.05 * scale;
+    z = hz * t + (Math.random() - 0.5) * 0.05 * scale;
+  } else if (r < wBody + wArms + wRotor) {
+    // rotor disc: biased to the rim so it reads as a ring, not a blob
+    const [hx, hz] = hubs[(Math.random() * 4) | 0];
+    const a = Math.random() * Math.PI * 2;
+    const rad = (0.26 + Math.random() * 0.11) * scale;
+    x = hx + Math.cos(a) * rad;
+    y = 0.1 * scale + (Math.random() - 0.5) * 0.03 * scale;
+    z = hz + Math.sin(a) * rad;
+  } else {
+    // gimbal camera slung under the nose
+    x = (Math.random() - 0.5) * 0.16 * scale;
+    y = -0.2 * scale - Math.random() * 0.14 * scale;
+    z = 0.26 * scale + (Math.random() - 0.5) * 0.16 * scale;
   }
+
+  out[i * 3] = x;
+  out[i * 3 + 1] = y;
+  out[i * 3 + 2] = z;
+}
+
+export function makeDronePoints(count: number, scale = 1) {
+  const out = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) sampleDronePoint(out, i, scale);
   return out;
+}
+
+export interface Swarm {
+  /** xyz per point: the drone shape, offset to its place in the formation */
+  swarm: Float32Array;
+  /** xyz per point: the centre of the drone this point belongs to */
+  home: Float32Array;
+}
+
+/**
+ * A formation of small drones surrounding the figure's position.
+ *
+ * `home` is carried separately so the shader can move whole drones without
+ * deforming them: subtract home to get a point's offset within its own
+ * airframe, interpolate home along the flight path, add the offset back. A
+ * single lerp of `swarm` would instead shrink every drone toward the origin as
+ * it flew, which reads as melting rather than approaching.
+ *
+ * Points are handed out to drones in contiguous blocks, and the figure's
+ * points run top to bottom, so each drone ends up responsible for one
+ * horizontal band of the body. The dissolve then looks like the formation
+ * depositing the figure in slices rather than a uniform fog collapsing.
+ */
+export function makeSwarm(
+  count: number,
+  scale: number,
+  drones: number,
+  spread: number
+): Swarm {
+  const swarm = new Float32Array(count * 3);
+  const home = new Float32Array(count * 3);
+
+  // Ring formation, deterministic rather than random: a fixed arrangement
+  // reads as a flight plan, and a random one reads as debris.
+  const centres: [number, number, number][] = [];
+  for (let d = 0; d < drones; d++) {
+    const a = (d / drones) * Math.PI * 2 + 0.5;
+    const rad = spread * (0.66 + 0.34 * ((d * 7) % 5) / 4);
+    centres.push([
+      Math.cos(a) * rad,
+      (((d * 13) % 7) / 6 - 0.5) * spread * 1.6,
+      Math.sin(a) * rad * 0.55,
+    ]);
+  }
+
+  const per = Math.ceil(count / drones);
+  for (let i = 0; i < count; i++) {
+    const c = centres[Math.min(drones - 1, (i / per) | 0)];
+    sampleDronePoint(swarm, i, scale);
+    swarm[i * 3] += c[0];
+    swarm[i * 3 + 1] += c[1];
+    swarm[i * 3 + 2] += c[2];
+    home[i * 3] = c[0];
+    home[i * 3 + 1] = c[1];
+    home[i * 3 + 2] = c[2];
+  }
+  return { swarm, home };
 }
 
 /** Scattered start positions, one shell per point. */

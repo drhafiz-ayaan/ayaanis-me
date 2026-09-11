@@ -8,6 +8,7 @@ import {
   buildCloud,
   makeScatter,
   makeDronePoints,
+  makeSwarm,
   loadCloudImage,
   type Cloud,
 } from "@/lib/cloud";
@@ -17,28 +18,43 @@ import { SEQ } from "@/lib/sequence";
 /**
  * Landing hero, as a single THREE.Points and one draw call.
  *
- * Opening sequence: scattered particles gather into a survey drone, the drone
- * holds station while the loading bar fills, it flies out toward the subject's
- * position, then the swarm bursts and resolves into Ayaan.
+ * The opening runs in two acts on two position tracks:
  *
- * Every stage is a position target in the same buffer — scatter, drone, figure
- * — blended in the vertex shader. Nothing is instantiated or destroyed mid
- * sequence, so the whole thing costs exactly one draw call from first frame to
- * last.
+ *   act one   scattered particles gather into one survey drone, it holds
+ *             station while the bar fills, then banks away out of frame. The
+ *             landing's details are revealed behind it as it leaves.
+ *   act two   the same particles re-enter as a formation of drones, fly in,
+ *             and dissolve into the three-dimensional figure.
+ *
+ * The handoff between acts is a hard switch of `uTrack` made underneath an
+ * alpha dip — by the time the track flips, nothing is on screen to see it
+ * flip. Cross-fading the two tracks instead would drag every particle along a
+ * straight line between a departing drone and an arriving one, which reads as
+ * a smear rather than as two separate aircraft.
+ *
+ * Scatter, drone, swarm and figure are all position targets in the same
+ * buffer, blended in the vertex shader, so the entire sequence costs exactly
+ * one draw call from the first frame to the last and nothing is created or
+ * destroyed part way through.
  */
 
 const VERT = /* glsl */ `
-  uniform float uAssemble;   // scatter -> drone
-  uniform float uMorph;      // drone   -> figure
+  uniform float uAssemble;   // scatter -> single drone
+  uniform vec3  uDepart;     // where the single drone has flown to
+  uniform float uTrack;      // 0 = single drone, 1 = swarm
+  uniform float uSwarmIn;    // swarm entry, off-screen -> formation
+  uniform float uResolve;    // swarm -> figure
   uniform float uTime;
   uniform float uSize;
-  uniform vec3  uFlight;     // where the drone has flown to
+  uniform float uVis;
   uniform vec3  uRoleTint;
   uniform float uRoleAmt;
   uniform float uRoleMode;
 
   attribute vec3 aScatter;
   attribute vec3 aFigure;
+  attribute vec3 aSwarm;
+  attribute vec3 aSwarmHome;
   attribute vec3 aColor;
   attribute float aSeed;
 
@@ -46,20 +62,29 @@ const VERT = /* glsl */ `
   varying float vFade;
 
   void main() {
-    // stage 1-3: particles gather into the drone, which then translates
-    vec3 dronePos = mix(aScatter, position, uAssemble) + uFlight;
+    // --- act one: one drone -------------------------------------------------
+    vec3 droneTrack = mix(aScatter, position, uAssemble) + uDepart;
 
-    // stage 4: dissolve into the figure, with an outward burst on the way so
-    // the drone visibly comes apart instead of sliding into a new shape
-    float burst = sin(uMorph * 3.14159265) * 0.7;
-    vec3 pos = mix(dronePos, aFigure, uMorph) + normalize(aScatter) * burst;
+    // --- act two: the formation --------------------------------------------
+    // Move whole airframes, not points: hold the point's offset within its own
+    // drone fixed and interpolate only the drone's centre.
+    vec3 local = aSwarm - aSwarmHome;
+    vec3 entry = aSwarmHome * 3.2 + vec3(-6.0, 1.4, -1.2);
+    vec3 swarmPos = mix(entry, aSwarmHome, uSwarmIn) + local;
 
-    float idle = mix(0.035, 0.014, uMorph);
+    // outward burst on the way in, so the formation visibly comes apart
+    float burst = sin(uResolve * 3.14159265) * 0.55;
+    vec3 swarmTrack =
+      mix(swarmPos, aFigure, uResolve) + normalize(aScatter) * burst;
+
+    vec3 pos = mix(droneTrack, swarmTrack, uTrack);
+
+    float idle = mix(0.035, 0.012, uResolve);
     pos.x += sin(uTime * 0.5 + aSeed * 9.0) * idle;
     pos.z += cos(uTime * 0.43 + aSeed * 7.0) * idle;
 
     // role expression, only once the figure has formed
-    float rm = uRoleAmt * uMorph;
+    float rm = uRoleAmt * uResolve;
     if (rm > 0.001) {
       vec3 disp;
       if (uRoleMode < 0.5) {
@@ -83,12 +108,21 @@ const VERT = /* glsl */ `
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uSize * (6.0 / -mv.z) * (1.0 + rm * 0.25);
 
-    // cyan hardware while it is a drone, true colour once it is a person
+    // cyan hardware while it is a machine, true colour once it is a person
     vec3 cyan = vec3(0.15, 0.68, 0.80);
-    vColor = mix(mix(cyan, aColor, uMorph), uRoleTint, rm * 0.72);
+    vec3 base = mix(cyan, aColor, uResolve);
+
+    // Depth shading. Without it a dense cloud is a flat sticker: every point
+    // is the same brightness, so the silhouette reads but the volume does
+    // not. Keying off the figure's own z darkens the back shell and lets the
+    // chest, shoulders and arms separate from the body behind them.
+    float front = smoothstep(-0.5, 0.62, aFigure.z);
+    base *= mix(1.0, 0.40 + 0.72 * front, uResolve);
+
+    vColor = mix(base, uRoleTint, rm * 0.72);
 
     float tw = 0.72 + 0.28 * sin(uTime * 1.3 + aSeed * 12.0);
-    vFade = uAssemble * mix(tw, 0.95, uMorph) * (1.0 + rm * 0.35);
+    vFade = uVis * mix(tw, 0.95, uResolve) * (1.0 + rm * 0.35);
   }
 `;
 
@@ -100,23 +134,30 @@ const FRAG = /* glsl */ `
     float d = length(uv);
     if (d > 0.5) discard;
     float a = smoothstep(0.5, 0.08, d);
-    gl_FragColor = vec4(vColor, a * vFade * 0.78);
+    gl_FragColor = vec4(vColor, a * vFade * 0.72);
   }
 `;
 
 const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
+const easeInCubic = (x: number) => x * x * x;
 const easeInOutCubic = (x: number) =>
   x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
 
-/** Where the drone holds station while it scans, before closing on the subject. */
-const HOLD = new THREE.Vector3(1.15, 1.45, 0.55);
+/** Where the single drone exits frame. */
+const EXIT = new THREE.Vector3(3.4, 2.6, -1.4);
+
+/** Drones in the formation. Enough to read as a swarm, few enough to read as craft. */
+const SWARM_SIZE = 7;
 
 function Points({ cloud }: { cloud: Cloud }) {
   const mat = useRef<THREE.ShaderMaterial>(null);
   const grp = useRef<THREE.Points>(null);
   const t = useRef(0);
-  const flyRef = useRef(0);
   const activeRole = useSystem((s) => s.activeRole);
   const introSkipped = useSystem((s) => s.introSkipped);
 
@@ -128,14 +169,22 @@ function Points({ cloud }: { cloud: Cloud }) {
     () => makeDronePoints(cloud.count, cloud.height * 0.46),
     [cloud]
   );
+  const swarm = useMemo(
+    () =>
+      makeSwarm(cloud.count, cloud.height * 0.1, SWARM_SIZE, cloud.height * 0.5),
+    [cloud]
+  );
 
   const uniforms = useMemo(
     () => ({
       uAssemble: { value: 0 },
-      uMorph: { value: 0 },
+      uDepart: { value: new THREE.Vector3() },
+      uTrack: { value: 0 },
+      uSwarmIn: { value: 0 },
+      uResolve: { value: 0 },
       uTime: { value: 0 },
-      uSize: { value: 2.85 },
-      uFlight: { value: new THREE.Vector3() },
+      uSize: { value: 2.4 },
+      uVis: { value: 0 },
       uRoleTint: { value: new THREE.Color("#22d3ee") },
       uRoleAmt: { value: 0 },
       uRoleMode: { value: 0 },
@@ -150,32 +199,38 @@ function Points({ cloud }: { cloud: Cloud }) {
     // Skipping jumps the clock rather than special-casing every stage, so the
     // end state is reached by the same code path as playing it through.
     t.current = introSkipped
-      ? Math.max(t.current, SEQ.morphEnd)
+      ? Math.max(t.current, SEQ.resolveEnd)
       : t.current + d;
     const time = t.current;
 
+    // --- act one ------------------------------------------------------------
     u.uAssemble.value = easeOutCubic(clamp01(time / SEQ.assembleEnd));
 
-    // Flight path. The drone surveys from a standoff position up and to the
-    // side, then closes on the subject: uFlight runs from HOLD down to zero,
-    // so the drone arrives exactly where the figure is about to appear and
-    // comes apart there. The sine terms bow the path into an arc, so it banks
-    // in rather than sliding down a straight line.
-    const fly = easeInOutCubic(
-      clamp01((time - SEQ.scanEnd) / (SEQ.flyEnd - SEQ.scanEnd))
+    const depart = clamp01(
+      (time - SEQ.scanEnd) / (SEQ.departEnd - SEQ.scanEnd)
     );
-    flyRef.current = fly;
-    const away = 1 - fly;
-    const arc = Math.sin(fly * Math.PI);
-    (u.uFlight.value as THREE.Vector3).set(
-      HOLD.x * away - arc * 0.35,
-      HOLD.y * away,
-      HOLD.z * away + arc * 0.5
+    // accelerating away, rather than easing to a halt at the frame edge
+    (u.uDepart.value as THREE.Vector3).copy(EXIT).multiplyScalar(
+      easeInCubic(depart)
     );
 
-    u.uMorph.value = easeInOutCubic(
-      clamp01((time - SEQ.flyEnd) / (SEQ.morphEnd - SEQ.flyEnd))
+    // --- act two ------------------------------------------------------------
+    const swarmIn = easeOutCubic(
+      clamp01((time - SEQ.departEnd) / (SEQ.swarmEnd - SEQ.departEnd))
     );
+    u.uSwarmIn.value = swarmIn;
+    u.uResolve.value = easeInOutCubic(
+      clamp01((time - SEQ.swarmEnd) / (SEQ.resolveEnd - SEQ.swarmEnd))
+    );
+
+    // The switch happens while nothing is visible, so it cannot be seen.
+    u.uTrack.value = time >= SEQ.departEnd ? 1 : 0;
+    u.uVis.value =
+      time < SEQ.departEnd
+        ? easeOutCubic(clamp01(time / SEQ.assembleEnd)) *
+          (1 - smoothstep(0.55, 1, depart))
+        : smoothstep(0, 0.22, swarmIn);
+
     u.uTime.value = state.clock.elapsedTime;
 
     if (activeRole != null) {
@@ -191,20 +246,17 @@ function Points({ cloud }: { cloud: Cloud }) {
     );
 
     if (grp.current) {
-      const morph = u.uMorph.value as number;
-      // the drone yaws on station, then the figure settles to face you
-      const spin = grp.current.rotation.y + d * 0.55 * (1 - morph);
-      const sway = Math.sin(state.clock.elapsedTime * 0.32) * 0.2;
-      grp.current.rotation.y = THREE.MathUtils.lerp(spin, sway, morph * 0.2);
+      const resolve = u.uResolve.value as number;
+
+      // the machines yaw under power, then the figure settles to face you
+      const spin = grp.current.rotation.y + d * 0.5 * (1 - resolve);
+      const sway = Math.sin(state.clock.elapsedTime * 0.3) * 0.22;
+      grp.current.rotation.y = THREE.MathUtils.lerp(spin, sway, resolve * 0.25);
 
       // A quadcopter is a horizontal object, so a level camera sees it edge-on
-      // as a smear. Tilt the view down onto it while it is a drone, then level
-      // off as the figure — which is vertical — takes over.
-      grp.current.rotation.x = THREE.MathUtils.lerp(-0.5, 0, morph);
-
-      // bank into the approach, level off as it arrives and comes apart
-      grp.current.rotation.z =
-        Math.sin(flyRef.current * Math.PI) * (1 - morph) * 0.28;
+      // as a flat smear. Tilt the view down onto the aircraft, then level off
+      // as the figure — which is vertical — takes over.
+      grp.current.rotation.x = THREE.MathUtils.lerp(-0.45, 0, resolve);
     }
   });
 
@@ -214,6 +266,11 @@ function Points({ cloud }: { cloud: Cloud }) {
         <bufferAttribute attach="attributes-position" args={[drone, 3]} />
         <bufferAttribute attach="attributes-aFigure" args={[cloud.figure, 3]} />
         <bufferAttribute attach="attributes-aScatter" args={[scatter, 3]} />
+        <bufferAttribute attach="attributes-aSwarm" args={[swarm.swarm, 3]} />
+        <bufferAttribute
+          attach="attributes-aSwarmHome"
+          args={[swarm.home, 3]}
+        />
         <bufferAttribute attach="attributes-aColor" args={[cloud.colors, 3]} />
         <bufferAttribute attach="attributes-aSeed" args={[cloud.seeds, 1]} />
       </bufferGeometry>
@@ -239,7 +296,12 @@ export default function HeroCloud({ className }: { className?: string }) {
     loadCloudImage()
       .then((img) => {
         if (cancelled) return;
-        setCloud(buildCloud(img, { height: 4.6, target: lowPower ? 7000 : 15000 }));
+        setCloud(
+          // Density is what makes the resolved figure read as a model rather
+          // than a scattering of dots. It is one draw call either way, so the
+          // cost is vertex shading and fill, which desktop absorbs easily.
+          buildCloud(img, { height: 4.6, target: lowPower ? 12000 : 42000 })
+        );
       })
       .catch(() => {});
     return () => {

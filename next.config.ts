@@ -4,6 +4,13 @@ const APEX = "ayaanaatif.me";
 
 const nextConfig: NextConfig = {
   /**
+   * The floating Next.js dev badge sits in the bottom-left corner, on top of
+   * the landing. It never ships to production, but it obscures the cinematic
+   * while the thing is being built and reviewed, which is when it matters.
+   */
+  devIndicators: false,
+
+  /**
    * Canonical host redirect.
    *
    * Vercel can do this itself when the domain is configured as a redirect, but
