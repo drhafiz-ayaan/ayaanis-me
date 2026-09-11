@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ayaanis.me
 
-## Getting Started
+Portfolio of **Ayaan Aatif** — robotics, digital twins and edge AI.
+Built as an interactive command system rather than a scrolling page.
 
-First, run the development server:
+**Live:** https://ayaanis.me
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## Stack
+
+| | |
+|---|---|
+| Framework | Next.js 15.5 (App Router, Turbopack) |
+| Language | TypeScript |
+| Styling | Tailwind CSS v4 (`@theme` tokens, no config file) |
+| 3D | three.js · React Three Fiber 9 |
+| Animation | Framer Motion + CSS |
+| State | Zustand |
+| Hosting | Vercel |
+
+## Architecture
+
+```
+src/
+  app/            layout (metadata, JSON-LD), page (phase orchestration)
+  content/
+    profile.ts    ← single source of truth for every fact on the site
+  components/
+    landing/      boot sequence + hero
+    hub/          command center, module dialogs
+    sections/     the eight module bodies
+    three/        WebGL scenes, each isolated by SceneBoundary
+    aura/         on-site assistant
+  lib/aura.ts     intent engine
+  hooks/          capability probe, idle-deferred mount
+  store/          system phase + active module
+tools/
+  segment-portrait.ps1   offline portrait → point-cloud segmentation
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Content integrity
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`src/content/profile.ts` is the only place facts live. Publications carry an
+explicit `status` (`published` / `accepted` / `scheduled`) and ventures carry a
+`stage` (`operating` / `building` / `concept`), so the UI cannot render an
+accepted paper as published or a concept as a shipped product.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+AURA answers **only** from this module — no API key, no network call, so it
+physically cannot invent a credential.
 
-## Learn More
+### Performance notes
 
-To learn more about Next.js, take a look at the following resources:
+Things that are load-bearing, not incidental:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **The hero is CSS-animated, not Framer Motion.** Framer writes its `initial`
+  styles into the SSR HTML, so an `opacity: 0` hero stays invisible until
+  hydration — that measured a 4.5s LCP on throttled mobile.
+- **three.js is held behind `requestIdleCallback`** so WebGL never sits on the
+  critical path.
+- **Every `<Canvas>` is wrapped in `SceneBoundary`.** A throw inside a canvas
+  otherwise propagates to the React root and unmounts the whole page; a visitor
+  without WebGL would get a blank site.
+- **The particle scenes are one draw call each** — custom shaders, position
+  interpolation on the GPU. Particle budget drops on weak devices via the
+  capability probe, and all motion respects `prefers-reduced-motion`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Lighthouse (desktop): Performance 99 · Accessibility 100 · Best Practices 100 ·
+SEO 100.
 
-## Deploy on Vercel
+## Develop
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm install
+npm run dev     # http://localhost:3000
+npm run build
+npm start
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Regenerating the hologram
+
+The Mission Briefing avatar is a point cloud built from a segmented portrait.
+To swap the photo:
+
+```powershell
+pwsh tools/segment-portrait.ps1 -Src path\to\photo.jpg -CropX 398 -CropY 520 -CropW 304 -CropH 634
+```
+
+It writes `public/avatar/ayaan-cloud.png` with the background knocked out to
+alpha 0. The runtime reads that PNG and infers volume from the silhouette.
+Works best on a subject that separates from its background by luminance.

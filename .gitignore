@@ -49,3 +49,6 @@ next-env.d.ts
 
 # lighthouse reports
 lh*.json
+
+# local dev tooling
+.claude/
