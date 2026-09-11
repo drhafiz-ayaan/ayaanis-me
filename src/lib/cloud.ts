@@ -135,6 +135,70 @@ export function buildCloud(
   };
 }
 
+/**
+ * A quadcopter sampled as points, matching an arbitrary point count.
+ *
+ * Built from primitives rather than a model file: the whole scene is one
+ * BufferGeometry, so the drone has to be expressible as positions in the same
+ * array the figure uses. A loaded mesh would mean a second draw call and a
+ * second asset on the critical path for something on screen for four seconds.
+ */
+export function makeDronePoints(count: number, scale = 1) {
+  const out = new Float32Array(count * 3);
+  const HUB = 0.62 * scale;
+  const hubs: [number, number][] = [
+    [HUB, HUB],
+    [-HUB, HUB],
+    [HUB, -HUB],
+    [-HUB, -HUB],
+  ];
+
+  // part budget: rotors read as "drone" most strongly, so they get the most
+  const wBody = 0.24;
+  const wArms = 0.18;
+  const wRotor = 0.46;
+  // remainder -> gimbal
+
+  for (let i = 0; i < count; i++) {
+    const r = Math.random();
+    let x = 0;
+    let y = 0;
+    let z = 0;
+
+    if (r < wBody) {
+      // fuselage
+      x = (Math.random() - 0.5) * 0.62 * scale;
+      y = (Math.random() - 0.5) * 0.2 * scale;
+      z = (Math.random() - 0.5) * 0.8 * scale;
+    } else if (r < wBody + wArms) {
+      // an arm running from the body out to a hub
+      const [hx, hz] = hubs[(Math.random() * 4) | 0];
+      const t = Math.random();
+      x = hx * t + (Math.random() - 0.5) * 0.05 * scale;
+      y = (Math.random() - 0.5) * 0.05 * scale;
+      z = hz * t + (Math.random() - 0.5) * 0.05 * scale;
+    } else if (r < wBody + wArms + wRotor) {
+      // rotor disc: biased to the rim so it reads as a ring, not a blob
+      const [hx, hz] = hubs[(Math.random() * 4) | 0];
+      const a = Math.random() * Math.PI * 2;
+      const rad = (0.26 + Math.random() * 0.11) * scale;
+      x = hx + Math.cos(a) * rad;
+      y = 0.1 * scale + (Math.random() - 0.5) * 0.03 * scale;
+      z = hz + Math.sin(a) * rad;
+    } else {
+      // gimbal camera slung under the nose
+      x = (Math.random() - 0.5) * 0.16 * scale;
+      y = -0.2 * scale - Math.random() * 0.14 * scale;
+      z = 0.26 * scale + (Math.random() - 0.5) * 0.16 * scale;
+    }
+
+    out[i * 3] = x;
+    out[i * 3 + 1] = y;
+    out[i * 3 + 2] = z;
+  }
+  return out;
+}
+
 /** Scattered start positions, one shell per point. */
 export function makeScatter(count: number, radius: number) {
   const out = new Float32Array(count * 3);
@@ -149,7 +213,10 @@ export function makeScatter(count: number, radius: number) {
   return out;
 }
 
-export const CLOUD_SRC = "/avatar/ayaan-cloud.png";
+// Versioned filename on purpose: next.config serves /avatar/* as immutable, so
+// a portrait replaced in place would stay stale for every returning visitor.
+// Bump the suffix whenever the source photo changes.
+export const CLOUD_SRC = "/avatar/ayaan-cloud-v2.png";
 
 /** Load the portrait once; the browser cache serves the second consumer. */
 export function loadCloudImage(): Promise<HTMLImageElement> {

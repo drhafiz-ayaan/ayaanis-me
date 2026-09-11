@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download } from "lucide-react";
@@ -9,47 +9,67 @@ import { useSystem } from "@/store/useSystem";
 import { useDeferredMount } from "@/hooks/useDeferredMount";
 import { SceneBoundary } from "@/components/three/SceneBoundary";
 import { cn } from "@/lib/utils";
+import { SEQ, SCAN_START, SCAN_DURATION } from "@/lib/sequence";
 
 const HeroCloud = dynamic(() => import("@/components/three/HeroCloud"), {
   ssr: false,
 });
 
-const BOOT_LINES = [
-  "initialising particle field",
-  "resolving geometry",
-  "reconstructing subject",
-  "system ready",
-];
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
-const BOOT_STEP_MS = 300;
+function stageLabel(t: number) {
+  if (t < SEQ.assembleEnd) return "deploying survey drone";
+  if (t < SEQ.scanEnd) return "scanning subject";
+  if (t < SEQ.flyEnd) return "scan complete · returning";
+  return "reconstructing subject";
+}
 
 /**
- * Terminal-style boot readout.
+ * Drone telemetry panel that runs alongside the opening sequence.
  *
- * All four lines are in the DOM from the first paint and cascade in via CSS
- * animation-delay. Revealing them with JS timers made the last line paint at
- * ~4.1s, and Lighthouse picked that up as the LCP element — a decorative
- * flourish was setting the page's headline metric.
+ * The bar is driven off the same SEQ timings as the shader, so it cannot drift
+ * from what the drone is doing — the bar finishing IS the drone departing.
+ * It reads elapsed time rather than counting frames, so a dropped frame slows
+ * the animation without desynchronising the readout.
  */
-function BootReadout({ onDone }: { onDone: () => void }) {
+function DroneLoader({ onDone }: { onDone: () => void }) {
+  const [pct, setPct] = useState(0);
+  const [label, setLabel] = useState(() => stageLabel(0));
+
   useEffect(() => {
-    const t = setTimeout(onDone, BOOT_LINES.length * BOOT_STEP_MS + 320);
-    return () => clearTimeout(t);
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = () => {
+      const el = (performance.now() - t0) / 1000;
+      setPct(Math.round(clamp01((el - SCAN_START) / SCAN_DURATION) * 100));
+      setLabel(stageLabel(el));
+      if (el < SEQ.morphEnd) raf = requestAnimationFrame(tick);
+      else onDone();
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [onDone]);
 
   return (
-    <ul className="font-mono text-[12px] uppercase leading-relaxed tracking-[0.16em] text-ink-mute sm:text-[11px]">
-      {BOOT_LINES.map((line, i) => (
-        <li
-          key={line}
-          className="rise flex items-center gap-2"
-          style={{ animationDelay: `${i * BOOT_STEP_MS}ms` }}
-        >
-          <span className="text-cyan">›</span>
-          <span>{line}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="w-[min(20rem,80vw)]">
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="font-mono text-[12px] uppercase tracking-[0.16em] text-ink-mute sm:text-[11px]">
+          <span className="text-cyan">›</span> {label}
+        </span>
+        <span className="font-mono text-[12px] tabular-nums text-cyan sm:text-[11px]">
+          {pct}%
+        </span>
+      </div>
+      <div className="mt-2 h-[3px] w-full overflow-hidden rounded-full bg-hairline">
+        <div
+          className="h-full origin-left rounded-full bg-cyan transition-transform duration-100 ease-linear"
+          style={{ transform: `scaleX(${pct / 100})` }}
+        />
+      </div>
+      <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-mute/60">
+        press any key to skip
+      </p>
+    </div>
   );
 }
 
@@ -68,6 +88,23 @@ export default function Landing() {
   const gfxReady = useDeferredMount();
   const activeRole = useSystem((s) => s.activeRole);
   const setActiveRole = useSystem((s) => s.setActiveRole);
+  const skipIntro = useSystem((s) => s.skipIntro);
+
+  // Any key or pointer press ends the cinematic. A four-second opening is a
+  // liability for an impatient reviewer, so it must always be escapable.
+  useEffect(() => {
+    if (phase !== "boot") return;
+    const skip = () => {
+      skipIntro();
+      finishBoot();
+    };
+    window.addEventListener("keydown", skip, { once: true });
+    window.addEventListener("pointerdown", skip, { once: true });
+    return () => {
+      window.removeEventListener("keydown", skip);
+      window.removeEventListener("pointerdown", skip);
+    };
+  }, [phase, skipIntro, finishBoot]);
 
   return (
     <div className="relative z-10 min-h-dvh">
@@ -92,7 +129,7 @@ export default function Landing() {
             transition={{ duration: 0.45 }}
             className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2 lg:left-8 lg:translate-x-0"
           >
-            <BootReadout onDone={finishBoot} />
+            <DroneLoader onDone={finishBoot} />
           </motion.div>
         )}
       </AnimatePresence>

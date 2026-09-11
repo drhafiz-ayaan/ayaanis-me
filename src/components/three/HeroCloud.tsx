@@ -4,23 +4,38 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useSystem } from "@/store/useSystem";
-import { buildCloud, makeScatter, loadCloudImage, type Cloud } from "@/lib/cloud";
+import {
+  buildCloud,
+  makeScatter,
+  makeDronePoints,
+  loadCloudImage,
+  type Cloud,
+} from "@/lib/cloud";
 import { roleModes } from "@/content/profile";
+import { SEQ } from "@/lib/sequence";
 
 /**
- * Landing hero: particles fly in, gather into a globe, then the globe resolves
- * into Ayaan. One THREE.Points, one draw call — the three shapes are three
- * position attributes and the blend happens in the vertex shader.
+ * Landing hero, as a single THREE.Points and one draw call.
+ *
+ * Opening sequence: scattered particles gather into a survey drone, the drone
+ * holds station while the loading bar fills, it flies out toward the subject's
+ * position, then the swarm bursts and resolves into Ayaan.
+ *
+ * Every stage is a position target in the same buffer — scatter, drone, figure
+ * — blended in the vertex shader. Nothing is instantiated or destroyed mid
+ * sequence, so the whole thing costs exactly one draw call from first frame to
+ * last.
  */
 
 const VERT = /* glsl */ `
-  uniform float uAssemble;  // scatter -> sphere
-  uniform float uMorph;     // sphere  -> figure
+  uniform float uAssemble;   // scatter -> drone
+  uniform float uMorph;      // drone   -> figure
   uniform float uTime;
   uniform float uSize;
+  uniform vec3  uFlight;     // where the drone has flown to
   uniform vec3  uRoleTint;
-  uniform float uRoleAmt;   // 0..1, ramps as a role is hovered
-  uniform float uRoleMode;  // 0..3, which behaviour to express
+  uniform float uRoleAmt;
+  uniform float uRoleMode;
 
   attribute vec3 aScatter;
   attribute vec3 aFigure;
@@ -31,38 +46,34 @@ const VERT = /* glsl */ `
   varying float vFade;
 
   void main() {
-    vec3 sphere = mix(aScatter, position, uAssemble);
-    vec3 pos = mix(sphere, aFigure, uMorph);
+    // stage 1-3: particles gather into the drone, which then translates
+    vec3 dronePos = mix(aScatter, position, uAssemble) + uFlight;
 
-    // drift keeps it alive; it fades out as the figure resolves so the
-    // likeness stays crisp rather than shimmering
-    float idle = mix(0.05, 0.014, uMorph);
+    // stage 4: dissolve into the figure, with an outward burst on the way so
+    // the drone visibly comes apart instead of sliding into a new shape
+    float burst = sin(uMorph * 3.14159265) * 0.7;
+    vec3 pos = mix(dronePos, aFigure, uMorph) + normalize(aScatter) * burst;
+
+    float idle = mix(0.035, 0.014, uMorph);
     pos.x += sin(uTime * 0.5 + aSeed * 9.0) * idle;
     pos.z += cos(uTime * 0.43 + aSeed * 7.0) * idle;
 
-    // Role expression. uRoleMode is a uniform, so this branch is coherent
-    // across every vertex and costs effectively nothing on the GPU. Only
-    // applies once the figure has formed — displacing a half-morphed cloud
-    // just reads as noise.
+    // role expression, only once the figure has formed
     float rm = uRoleAmt * uMorph;
     if (rm > 0.001) {
       vec3 disp;
       if (uRoleMode < 0.5) {
-        // AI: high-frequency search, a field still resolving
         disp = vec3(
           sin(uTime * 7.0 + aSeed * 31.0),
           cos(uTime * 6.3 + aSeed * 17.0),
           sin(uTime * 5.1 + aSeed * 23.0)
         ) * 0.055;
       } else if (uRoleMode < 1.5) {
-        // Robotics: snap to a lattice — discretised, mechanical, repeatable
         float st = 0.14;
         disp = (floor(pos / st) * st + st * 0.5) - pos;
       } else if (uRoleMode < 2.5) {
-        // Digital twin: horizontal scan bands sweeping the body
         disp = vec3(0.0, 0.0, sin(pos.y * 8.0 - uTime * 2.6) * 0.12);
       } else {
-        // Founder: contract — scattered work pulled into one thing
         disp = -pos * 0.085;
       }
       pos += disp * rm;
@@ -72,8 +83,7 @@ const VERT = /* glsl */ `
     gl_Position = projectionMatrix * mv;
     gl_PointSize = uSize * (6.0 / -mv.z) * (1.0 + rm * 0.25);
 
-    // cyan while it is still a globe, true colour once it is a person,
-    // then pushed toward the hovered role's accent
+    // cyan hardware while it is a drone, true colour once it is a person
     vec3 cyan = vec3(0.15, 0.68, 0.80);
     vColor = mix(mix(cyan, aColor, uMorph), uRoleTint, rm * 0.72);
 
@@ -94,18 +104,28 @@ const FRAG = /* glsl */ `
   }
 `;
 
-const ASSEMBLE_END = 2.2;
-const HOLD_END = 3.4;
-const MORPH_END = 5.8;
+const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
+const easeInOutCubic = (x: number) =>
+  x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+
+/** Where the drone holds station while it scans, before closing on the subject. */
+const HOLD = new THREE.Vector3(1.15, 1.45, 0.55);
 
 function Points({ cloud }: { cloud: Cloud }) {
   const mat = useRef<THREE.ShaderMaterial>(null);
   const grp = useRef<THREE.Points>(null);
   const t = useRef(0);
+  const flyRef = useRef(0);
   const activeRole = useSystem((s) => s.activeRole);
+  const introSkipped = useSystem((s) => s.introSkipped);
 
   const scatter = useMemo(
-    () => makeScatter(cloud.count, cloud.height * 0.9),
+    () => makeScatter(cloud.count, cloud.height * 0.95),
+    [cloud]
+  );
+  const drone = useMemo(
+    () => makeDronePoints(cloud.count, cloud.height * 0.46),
     [cloud]
   );
 
@@ -114,7 +134,8 @@ function Points({ cloud }: { cloud: Cloud }) {
       uAssemble: { value: 0 },
       uMorph: { value: 0 },
       uTime: { value: 0 },
-      uSize: { value: 3.6 },
+      uSize: { value: 2.85 },
+      uFlight: { value: new THREE.Vector3() },
       uRoleTint: { value: new THREE.Color("#22d3ee") },
       uRoleAmt: { value: 0 },
       uRoleMode: { value: 0 },
@@ -123,25 +144,40 @@ function Points({ cloud }: { cloud: Cloud }) {
   );
 
   useFrame((state, d) => {
-    t.current += d;
     if (!mat.current) return;
-
-    const a = Math.min(1, t.current / ASSEMBLE_END);
-    mat.current.uniforms.uAssemble.value = 1 - Math.pow(1 - a, 3);
-
-    const m =
-      t.current <= HOLD_END
-        ? 0
-        : Math.min(1, (t.current - HOLD_END) / (MORPH_END - HOLD_END));
-    // ease-in-out so the globe lets go slowly and the figure lands softly
-    mat.current.uniforms.uMorph.value =
-      m < 0.5 ? 4 * m * m * m : 1 - Math.pow(-2 * m + 2, 3) / 2;
-    mat.current.uniforms.uTime.value = state.clock.elapsedTime;
-
-    // Ramp the role influence rather than snapping it, so moving along the
-    // role list reads as the cloud changing behaviour, not flicking between
-    // presets. The tint is set immediately; uRoleAmt does the easing.
     const u = mat.current.uniforms;
+
+    // Skipping jumps the clock rather than special-casing every stage, so the
+    // end state is reached by the same code path as playing it through.
+    t.current = introSkipped
+      ? Math.max(t.current, SEQ.morphEnd)
+      : t.current + d;
+    const time = t.current;
+
+    u.uAssemble.value = easeOutCubic(clamp01(time / SEQ.assembleEnd));
+
+    // Flight path. The drone surveys from a standoff position up and to the
+    // side, then closes on the subject: uFlight runs from HOLD down to zero,
+    // so the drone arrives exactly where the figure is about to appear and
+    // comes apart there. The sine terms bow the path into an arc, so it banks
+    // in rather than sliding down a straight line.
+    const fly = easeInOutCubic(
+      clamp01((time - SEQ.scanEnd) / (SEQ.flyEnd - SEQ.scanEnd))
+    );
+    flyRef.current = fly;
+    const away = 1 - fly;
+    const arc = Math.sin(fly * Math.PI);
+    (u.uFlight.value as THREE.Vector3).set(
+      HOLD.x * away - arc * 0.35,
+      HOLD.y * away,
+      HOLD.z * away + arc * 0.5
+    );
+
+    u.uMorph.value = easeInOutCubic(
+      clamp01((time - SEQ.flyEnd) / (SEQ.morphEnd - SEQ.flyEnd))
+    );
+    u.uTime.value = state.clock.elapsedTime;
+
     if (activeRole != null) {
       const r = roleModes[activeRole];
       u.uRoleMode.value = r.mode;
@@ -155,18 +191,27 @@ function Points({ cloud }: { cloud: Cloud }) {
     );
 
     if (grp.current) {
-      const morph = mat.current.uniforms.uMorph.value;
-      // spins freely as a globe, then settles to face the viewer
-      const spin = grp.current.rotation.y + d * 0.5 * (1 - morph);
+      const morph = u.uMorph.value as number;
+      // the drone yaws on station, then the figure settles to face you
+      const spin = grp.current.rotation.y + d * 0.55 * (1 - morph);
       const sway = Math.sin(state.clock.elapsedTime * 0.32) * 0.2;
-      grp.current.rotation.y = THREE.MathUtils.lerp(spin, sway, morph * 0.16);
+      grp.current.rotation.y = THREE.MathUtils.lerp(spin, sway, morph * 0.2);
+
+      // A quadcopter is a horizontal object, so a level camera sees it edge-on
+      // as a smear. Tilt the view down onto it while it is a drone, then level
+      // off as the figure — which is vertical — takes over.
+      grp.current.rotation.x = THREE.MathUtils.lerp(-0.5, 0, morph);
+
+      // bank into the approach, level off as it arrives and comes apart
+      grp.current.rotation.z =
+        Math.sin(flyRef.current * Math.PI) * (1 - morph) * 0.28;
     }
   });
 
   return (
     <points ref={grp}>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[cloud.sphere, 3]} />
+        <bufferAttribute attach="attributes-position" args={[drone, 3]} />
         <bufferAttribute attach="attributes-aFigure" args={[cloud.figure, 3]} />
         <bufferAttribute attach="attributes-aScatter" args={[scatter, 3]} />
         <bufferAttribute attach="attributes-aColor" args={[cloud.colors, 3]} />

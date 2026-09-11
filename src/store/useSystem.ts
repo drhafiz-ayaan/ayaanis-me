@@ -13,6 +13,8 @@ interface SystemState {
   lowPower: boolean;
   /** Index into `roles` while one is hovered/focused on the landing, else null. */
   activeRole: number | null;
+  /** Intro can be skipped — nobody should be held hostage by a cinematic. */
+  introSkipped: boolean;
 
   enterSystem: () => void;
   finishBoot: () => void;
@@ -21,6 +23,7 @@ interface SystemState {
   setAura: (open: boolean) => void;
   setLowPower: (v: boolean) => void;
   setActiveRole: (i: number | null) => void;
+  skipIntro: () => void;
 }
 
 export const useSystem = create<SystemState>((set) => ({
@@ -29,6 +32,7 @@ export const useSystem = create<SystemState>((set) => ({
   auraOpen: false,
   lowPower: false,
   activeRole: null,
+  introSkipped: false,
 
   finishBoot: () => set((s) => (s.phase === "boot" ? { phase: "landing" } : s)),
   enterSystem: () => set({ phase: "hub" }),
@@ -37,4 +41,5 @@ export const useSystem = create<SystemState>((set) => ({
   setAura: (open) => set({ auraOpen: open }),
   setLowPower: (v) => set({ lowPower: v }),
   setActiveRole: (i) => set({ activeRole: i }),
+  skipIntro: () => set({ introSkipped: true }),
 }));
