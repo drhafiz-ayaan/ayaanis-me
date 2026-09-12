@@ -4,23 +4,33 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useSystem } from "@/store/useSystem";
-import { loadCloudImage, buildCloud, type Cloud } from "@/lib/cloud";
+import { loadCloudImage } from "@/lib/cloud";
+import { buildFaceGrid, loadFaceImage, type FaceGrid } from "@/lib/face";
 import { buildWalker, poseWalk, BONES, type Walker } from "@/lib/walker";
 import { roleModes } from "@/content/profile";
 
 /**
- * The walking figure, its reflection, the floor it walks on, and the
- * hologram standing behind it.
+ * The walking figure, its reflection, the floor it walks on, and the face
+ * projected behind it.
  *
- * Three systems share one canvas:
+ * Four systems share one canvas:
  *
- *   figure    a point cloud skinned to a procedural humanoid, shaded so it
- *             reads as a body with volume rather than a cloud of dots. Drawn
- *             twice — once upright, once mirrored under the floor.
+ *   face      a head-and-shoulders crop sampled as a large point raster,
+ *             filling the frame behind everything else. It sits outside the
+ *             rotated group, square to the camera, because it is a display
+ *             panel rather than an object standing in the room.
+ *   figure    a point cloud skinned to a procedural humanoid, walking toward
+ *             the viewer, shaded so it reads as a body with volume rather
+ *             than a cloud of dots. Drawn twice — once upright, once mirrored
+ *             under the floor.
+ *   floor     a derivative-antialiased grid, tinted by the active role.
  *   sparks    particles that fall, bounce and settle, kicked up by the
  *             figure's actual footfalls rather than on a timer.
- *   hologram  the portrait cloud, standing behind at reduced intensity. This
- *             is the one that carries the likeness; the walker carries motion.
+ *
+ * The face carries the likeness; the figure carries the motion. Neither has
+ * to do both, which is what lets each be good at its own job — a photograph
+ * cannot walk, and a rig built from one front-on still cannot hold up to
+ * being studied at close range.
  */
 
 const KEY_LIGHT = new THREE.Vector3(-0.45, 0.62, 0.75).normalize();
@@ -107,7 +117,7 @@ function figureUniforms(mirror: number) {
     uR: { value: Array.from({ length: BONES }, () => new THREE.Vector3()) },
     uF: { value: Array.from({ length: BONES }, () => new THREE.Vector3()) },
     uMirror: { value: mirror },
-    uSize: { value: 2.5 },
+    uSize: { value: 2.85 },
     uTime: { value: 0 },
     uFade: { value: 1 },
     uLight: { value: KEY_LIGHT.clone() },
@@ -149,6 +159,66 @@ const FLOOR_FRAG = /* glsl */ `
     vec3 base = mix(vec3(0.13, 0.62, 0.78), uTint, uTintAmt * 0.75);
     float a = (line * 0.42 + pulse * 0.10) * fade;
     gl_FragColor = vec4(base, a);
+  }
+`;
+
+/* -------------------------------------------------------------- face holo */
+
+const FACE_VERT = /* glsl */ `
+  uniform float uTime;
+  uniform float uSize;
+  uniform vec3  uTint;
+  uniform float uTintAmt;
+
+  attribute vec3  aColor;
+  attribute vec2  aUV;
+
+  varying vec3  vColor;
+  varying float vAlpha;
+
+  // cheap hash, for picking which raster rows tear
+  float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+  void main() {
+    vec3 pos = position;
+
+    // Occasional horizontal tear on a single raster row. Rows are quantised so
+    // a whole line displaces together — a per-point offset would just look
+    // like noise rather than like a signal breaking up.
+    float rowId = floor(aUV.y * 150.0);
+    float slot = floor(uTime * 2.6);
+    float tear = step(0.982, hash(rowId * 7.31 + slot * 3.77));
+    pos.x += tear * (hash(rowId + slot) - 0.5) * 0.55;
+
+    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = uSize * (6.0 / -mv.z);
+
+    // interlace: every other raster row sits dimmer
+    float raster = 0.55 + 0.45 * step(0.5, fract(aUV.y * 150.0));
+
+    // a bright scan line travelling up the face
+    float s = fract(aUV.y * 1.0 + uTime * 0.16);
+    float scan = smoothstep(0.0, 0.035, s) * smoothstep(0.10, 0.035, s);
+
+    // fade off at the edges so it reads as projected, not as a photo pasted on
+    vec2 c = aUV - 0.5;
+    float vign = smoothstep(0.70, 0.12, length(c));
+
+    // Additive blending multiplies colour by alpha, so brightness is pushed
+    // through the colour — alpha is already near the ceiling and clamps at 1.
+    vColor = mix(aColor, uTint, uTintAmt * 0.55) * (1.05 + scan * 1.9);
+    vAlpha = raster * vign * (0.62 + scan * 0.8);
+  }
+`;
+
+const FACE_FRAG = /* glsl */ `
+  varying vec3  vColor;
+  varying float vAlpha;
+  void main() {
+    vec2 uv = gl_PointCoord - 0.5;
+    if (length(uv) > 0.5) discard;
+    gl_FragColor = vec4(vColor, vAlpha);
   }
 `;
 
@@ -216,11 +286,11 @@ function useSparks(count: number) {
 
 function Scene({
   walker,
-  cloud,
+  face,
   lowPower,
 }: {
   walker: Walker;
-  cloud: Cloud | null;
+  face: FaceGrid | null;
   lowPower: boolean;
 }) {
   const activeRole = useSystem((s) => s.activeRole);
@@ -230,7 +300,7 @@ function Scene({
   const floorMat = useRef<THREE.ShaderMaterial>(null);
   const sparkMat = useRef<THREE.ShaderMaterial>(null);
   const sparkGeo = useRef<THREE.BufferGeometry>(null);
-  const holoRef = useRef<THREE.Points>(null);
+  const faceMat = useRef<THREE.ShaderMaterial>(null);
 
   const uniA = useMemo(() => figureUniforms(0), []);
   const uniB = useMemo(() => figureUniforms(1), []);
@@ -411,9 +481,10 @@ function Scene({
       sparkGeo.current.attributes.aLife.needsUpdate = true;
     }
 
-    // the hologram behind breathes and turns very slowly
-    if (holoRef.current) {
-      holoRef.current.rotation.y = Math.sin(time * 0.16) * 0.22;
+    if (faceMat.current) {
+      faceMat.current.uniforms.uTime.value = time;
+      faceMat.current.uniforms.uTintAmt.value = tintAmt.current;
+      (faceMat.current.uniforms.uTint.value as THREE.Color).copy(tint);
     }
   };
 
@@ -445,7 +516,49 @@ function Scene({
   }, [walker]);
 
   return (
-    <group rotation={[0, -0.9, 0]}>
+    <>
+      {/*
+        The face. Outside the rotated group and square to the camera — it is a
+        display panel, not an object standing in the room, so it must not
+        share the floor's perspective.
+      */}
+      {face && (
+        <points position={[0, 2.6, -6.5]}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[face.positions, 3]}
+            />
+            <bufferAttribute attach="attributes-aColor" args={[face.colors, 3]} />
+            <bufferAttribute attach="attributes-aUV" args={[face.uv, 2]} />
+          </bufferGeometry>
+          <shaderMaterial
+            ref={faceMat}
+            vertexShader={FACE_VERT}
+            fragmentShader={FACE_FRAG}
+            uniforms={{
+              uTime: { value: 0 },
+              // Sized so the dot pitch just touches on screen: the grid spacing
+              // at this depth is ~3.3px, so anything under that leaves the face
+              // as sparse specks rather than a legible raster.
+              uSize: { value: lowPower ? 12.5 : 6.5 },
+              uTint: { value: new THREE.Color("#22d3ee") },
+              uTintAmt: { value: 0 },
+            }}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </points>
+      )}
+
+      {/*
+        The figure walks toward the viewer, so it is very nearly square to the
+        camera. The small yaw is only there to keep the body from reading as a
+        flat cut-out; turn it any further and the walk becomes a profile
+        crossing the frame rather than an approach.
+      */}
+      <group rotation={[0, -0.34, 0]}>
       {/* floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[40, 40]} />
@@ -464,41 +577,6 @@ function Scene({
         />
       </mesh>
 
-      {/* the hologram standing behind, carrying the likeness */}
-      {cloud && (
-        <points ref={holoRef} position={[-2.4, 1.95, -2.0]}>
-          <bufferGeometry>
-            <bufferAttribute
-              attach="attributes-position"
-              args={[cloud.figure, 3]}
-            />
-            <bufferAttribute attach="attributes-aColor" args={[cloud.colors, 3]} />
-          </bufferGeometry>
-          <shaderMaterial
-            vertexShader={/* glsl */ `
-              attribute vec3 aColor;
-              varying vec3 vColor;
-              void main() {
-                vec4 mv = modelViewMatrix * vec4(position, 1.0);
-                gl_Position = projectionMatrix * mv;
-                gl_PointSize = 1.9 * (6.0 / -mv.z);
-                vColor = aColor;
-              }
-            `}
-            fragmentShader={/* glsl */ `
-              varying vec3 vColor;
-              void main() {
-                vec2 uv = gl_PointCoord - 0.5;
-                if (length(uv) > 0.5) discard;
-                gl_FragColor = vec4(vColor, 0.34);
-              }
-            `}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </points>
-      )}
 
       {/* reflection first, so the upright figure blends over it */}
       <points geometry={geo}>
@@ -545,14 +623,15 @@ function Scene({
           blending={THREE.AdditiveBlending}
         />
       </points>
-    </group>
+      </group>
+    </>
   );
 }
 
 export default function WalkScene({ className }: { className?: string }) {
   const lowPower = useSystem((s) => s.lowPower);
   const [walker, setWalker] = useState<Walker | null>(null);
-  const [cloud, setCloud] = useState<Cloud | null>(null);
+  const [face, setFace] = useState<FaceGrid | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -560,11 +639,16 @@ export default function WalkScene({ className }: { className?: string }) {
       .then((img) => {
         if (cancelled) return;
         setWalker(
-          buildWalker(img, { count: lowPower ? 7000 : 22000, height: 3.0 })
+          buildWalker(img, { count: lowPower ? 7000 : 26000, height: 3.35 })
         );
-        setCloud(
-          buildCloud(img, { height: 3.6, target: lowPower ? 4000 : 11000 })
-        );
+      })
+      .catch(() => {});
+    // The face is a second, much larger crop of the same subject, so it loads
+    // independently — the figure should not wait on the backdrop.
+    loadFaceImage()
+      .then((img) => {
+        if (cancelled) return;
+        setFace(buildFaceGrid(img, { step: lowPower ? 4 : 2, height: 10.5 }));
       })
       .catch(() => {});
     return () => {
@@ -577,13 +661,13 @@ export default function WalkScene({ className }: { className?: string }) {
   return (
     <div className={className} aria-hidden="true">
       <Canvas
-        camera={{ position: [0.2, 1.75, 6.4], fov: 40 }}
-        onCreated={({ camera }) => camera.lookAt(0, 1.35, 0)}
+        camera={{ position: [0, 1.62, 5.5], fov: 42 }}
+        onCreated={({ camera }) => camera.lookAt(0, 1.45, 0)}
         dpr={lowPower ? 1 : [1, 1.75]}
         gl={{ antialias: false, alpha: true, powerPreference: "high-performance" }}
         style={{ pointerEvents: "none" }}
       >
-        <Scene walker={walker} cloud={cloud} lowPower={lowPower} />
+        <Scene walker={walker} face={face} lowPower={lowPower} />
       </Canvas>
     </div>
   );

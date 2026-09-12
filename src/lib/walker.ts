@@ -471,7 +471,10 @@ export function poseWalk(
   // torso counter-rotates against the hips, and leans very slightly into it
   const twist = Math.sin(TAU * phase) * 0.10;
   const lean = 0.05;
-  const sway = Math.sin(TAU * phase) * hipHalf * 0.14;
+  // Head-on, the stride is foreshortened into depth and barely reads. Weight
+  // shift and vertical bob are what sell an approaching walk from the front,
+  // so the lateral sway is pushed well past what a side view would want.
+  const sway = Math.sin(TAU * phase) * hipHalf * 0.45;
 
   const chestY = pelvisY + (rig.chestY - hipY);
   const neckY = pelvisY + (rig.neckY - hipY);
