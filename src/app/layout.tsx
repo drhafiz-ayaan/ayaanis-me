@@ -52,6 +52,20 @@ export const metadata: Metadata = {
   authors: [{ name: identity.fullName, url: siteUrl }],
   creator: identity.fullName,
   alternates: { canonical: siteUrl },
+  /**
+   * Declared explicitly rather than left to file conventions. icon.svg and
+   * apple-icon.png are picked up from src/app automatically, but favicon.ico
+   * has to live in public/ — Next tries to decode images in the app directory
+   * and chokes on a PNG-entry ICO — and a file in public/ produces no link
+   * tag of its own.
+   */
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: "/apple-icon.png",
+  },
   openGraph: {
     type: "profile",
     url: siteUrl,

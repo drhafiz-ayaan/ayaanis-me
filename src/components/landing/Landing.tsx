@@ -14,6 +14,12 @@ import { SEQ, DETAILS_AT, SCAN_START, SCAN_DURATION } from "@/lib/sequence";
 const HeroCloud = dynamic(() => import("@/components/three/HeroCloud"), {
   ssr: false,
 });
+const WalkScene = dynamic(() => import("@/components/three/WalkScene"), {
+  ssr: false,
+});
+const RolePanel = dynamic(() => import("@/components/landing/RolePanel"), {
+  ssr: false,
+});
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
@@ -130,6 +136,29 @@ export default function Landing() {
     finishBoot();
   }, [finishBoot]);
 
+  /**
+   * Handoff from the opening cinematic to the walking figure.
+   *
+   * These are two canvases, not one, and they overlap for the duration of the
+   * cross-fade — "both" is the window where the walker has mounted and warmed
+   * up behind the resolving swarm, so the swap lands on a scene that is
+   * already running rather than on a first frame that has to compile shaders
+   * and build twenty thousand points.
+   */
+  const [act, setAct] = useState<"intro" | "both" | "walk">("intro");
+  useEffect(() => {
+    if (introSkipped) {
+      setAct("walk");
+      return;
+    }
+    const a = setTimeout(() => setAct("both"), (SEQ.resolveEnd - 0.7) * 1000);
+    const b = setTimeout(() => setAct("walk"), (SEQ.resolveEnd + 1.0) * 1000);
+    return () => {
+      clearTimeout(a);
+      clearTimeout(b);
+    };
+  }, [introSkipped]);
+
   // Anyone who has asked for less motion gets the page, not the cinematic.
   useEffect(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
@@ -165,23 +194,45 @@ export default function Landing() {
         text; on narrow screens it sits behind the copy, dimmed, so it reads as
         atmosphere instead of competing with the words.
       */}
-      <div className="pointer-events-none absolute inset-0 lg:left-[46%]">
-        {gfxReady && (
-          <SceneBoundary label="hero-cloud">
-            {/*
-              On narrow screens the cloud sits behind the copy and is dimmed so
-              it reads as atmosphere. But during act one there is no copy to sit
-              behind — dimming then would hide the entire opening — so it holds
-              full strength until the details arrive.
-            */}
-            <HeroCloud
-              className={cn(
-                "h-full w-full transition-opacity duration-700 lg:opacity-100",
-                revealState === "off" ? "opacity-95" : "opacity-30"
-              )}
-            />
-          </SceneBoundary>
+      <div className="pointer-events-none absolute inset-0 lg:left-[40%]">
+        {gfxReady && act !== "walk" && (
+          <div
+            className="absolute inset-0 transition-opacity duration-[900ms]"
+            style={{ opacity: act === "both" ? 0 : 1 }}
+          >
+            <SceneBoundary label="hero-cloud">
+              {/*
+                On narrow screens the cloud sits behind the copy and is dimmed
+                so it reads as atmosphere. But during act one there is no copy
+                to sit behind — dimming then would hide the entire opening — so
+                it holds full strength until the details arrive.
+              */}
+              <HeroCloud
+                className={cn(
+                  "h-full w-full transition-opacity duration-700 lg:opacity-100",
+                  revealState === "off" ? "opacity-95" : "opacity-30"
+                )}
+              />
+            </SceneBoundary>
+          </div>
         )}
+
+        {gfxReady && act !== "intro" && (
+          <div className="fade-in absolute inset-0">
+            <SceneBoundary label="walk-scene">
+              <WalkScene className="h-full w-full opacity-40 lg:opacity-100" />
+            </SceneBoundary>
+          </div>
+        )}
+      </div>
+
+      {/*
+        The role detail window, opening beside the figure. Desktop only: on a
+        phone the figure is already behind the copy, and a panel over the top
+        of both would leave nothing legible.
+      */}
+      <div className="pointer-events-none absolute right-6 top-1/2 z-20 hidden -translate-y-1/2 lg:block">
+        <RolePanel index={activeRole} />
       </div>
 
       <AnimatePresence>

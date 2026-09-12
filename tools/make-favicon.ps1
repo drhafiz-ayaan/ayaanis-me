@@ -1,5 +1,12 @@
 <#
-  Rasterises the monogram into src/app/favicon.ico and src/app/apple-icon.png.
+  Rasterises the monogram into public/favicon.ico and src/app/apple-icon.png.
+
+  The ICO goes in public/, NOT in src/app/. Next processes images in the app
+  directory to read their dimensions, and its ICO decoder expects DIB entries;
+  this file carries PNG-compressed entries, which every browser reads but that
+  decoder does not — it fails with "unable to decode image data" and serves a
+  500 for the whole route. Served from public/ it is never decoded, and
+  browsers still find it at the conventional /favicon.ico.
 
   Why both, when src/app/icon.svg already exists: the SVG only gets used by
   clients that read the <link rel="icon"> tag. Google's crawler, Windows
@@ -16,7 +23,7 @@
   Usage: powershell -File tools/make-favicon.ps1
 #>
 param(
-  [string]$IcoOut = "src/app/favicon.ico",
+  [string]$IcoOut = "public/favicon.ico",
   [string]$AppleOut = "src/app/apple-icon.png"
 )
 

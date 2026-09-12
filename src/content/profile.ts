@@ -26,6 +26,14 @@ export const identity = {
  * cloud. Hovering a role should *show* what it means rather than just
  * recolour the page — so `mode` selects a displacement in the cloud shader.
  */
+/**
+ * The four hats, and what each one pulls up on the landing.
+ *
+ * `detail` holds ids rather than prose so the hover panel renders the same
+ * project and skill records the rest of the site does. Restating them here as
+ * copy would let the landing drift out of step with the modules, and would
+ * mean a second, unverified description of work that is already described.
+ */
 export const roleModes = [
   {
     label: "AI Engineer",
@@ -33,6 +41,11 @@ export const roleModes = [
     note: "perception, learning, inference at the edge",
     /** 0 — high-frequency jitter: a field still searching for its answer */
     mode: 0,
+    detail: {
+      cluster: "ai",
+      projects: ["sim2real", "turtlebot-swarm"],
+      ventures: [],
+    },
   },
   {
     label: "Robotics Researcher",
@@ -40,6 +53,11 @@ export const roleModes = [
     note: "autonomy that has to survive the real world",
     /** 1 — snaps to a lattice: mechanical, discretised, repeatable */
     mode: 1,
+    detail: {
+      cluster: "robotics",
+      projects: ["turtlebot-swarm", "uav-twin", "underwater-arm"],
+      ventures: [],
+    },
   },
   {
     label: "Digital Twin Builder",
@@ -47,6 +65,11 @@ export const roleModes = [
     note: "the physical world, mirrored and synchronised",
     /** 2 — horizontal scan bands sweep the body, the twin refreshing */
     mode: 2,
+    detail: {
+      cluster: "engineering",
+      projects: ["uav-twin"],
+      ventures: ["twinverse"],
+    },
   },
   {
     label: "Founder",
@@ -54,6 +77,11 @@ export const roleModes = [
     note: "research turned into something people can deploy",
     /** 3 — contracts and brightens: scattered work pulled into one thing */
     mode: 3,
+    detail: {
+      cluster: "development",
+      projects: [],
+      ventures: ["ayrox", "twinverse", "formatiq"],
+    },
   },
 ] as const;
 
